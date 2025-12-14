@@ -10,8 +10,12 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
+from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-1%r(_(1olf@jy%(woclmfnzm8-goh(z64%cgvmq=l%e=+(c#ye'
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -82,13 +86,14 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'Rentify',
-        'USER': 'postgres',
-        'PASSWORD': 'Sujith@8267',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.getenv("DB_NAME"),
+        'USER': os.getenv("DB_USER"),
+        'PASSWORD': os.getenv("DB_PASSWORD"),
+        'HOST': os.getenv("DB_HOST"),
+        'PORT': os.getenv("DB_PORT"),
     }
 }
+
 
 
 # Password validation
@@ -152,8 +157,8 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com' # Replace with your provider's host
 EMAIL_PORT = 587             # Standard TLS port
 EMAIL_USE_TLS = True         # Required for secure connections
-EMAIL_HOST_USER = 'sujith.m1524@gmail.com' # The sending address
-EMAIL_HOST_PASSWORD = 'tril jyrr jncg jqci' # ***IMPORTANT: Use an App Password, not your regular password***
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = 'Rentify Support <support@rentify.com>'
 
 
@@ -214,16 +219,15 @@ ALLOWED_HOSTS = [
     'localhost',
     '192.168.29.106',
     '192.168.118.1',
-    'https://hrz5g6hz-8000.inc1.devtunnels.ms/',
+    'hrz5g6hz-8000.inc1.devtunnels.ms',
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "https://hrz5g6hz-8000.inc1.devtunnels.ms/",
-    "http://localhost:5173",   # Vite dev server
+    "https://hrz5g6hz-8000.inc1.devtunnels.ms",
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:3000",   # CRA
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://192.168.29.106:8000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -233,7 +237,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://hrz5g6hz-8000.inc1.devtunnels.ms/",
+    "https://hrz5g6hz-8000.inc1.devtunnels.ms",
 ]
 
 CORS_ALLOW_HEADERS = [
