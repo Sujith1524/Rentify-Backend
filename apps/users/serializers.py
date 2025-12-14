@@ -6,6 +6,8 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.core.validators import validate_email # For email format validation
+from django.db import transaction # New Import for atomic DB operations
+from rest_framework_simplejwt.tokens import RefreshToken # New Import for token generation
 
 # Import from enterprise structure
 from apps.core.utils import validate_password_complexity 
@@ -15,7 +17,7 @@ from .tasks import generate_and_cache_otp # This task will use email now
 User = get_user_model()
 
 
-# --- 1. User Registration Serializer ---
+# --- 1. User Registration Serializer (Now stores data in cache) ---
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, min_length=8)
     
@@ -25,79 +27,162 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         extra_kwargs = {'password': {'write_only': True}}
 
     def validate_email(self, value):
-        # 1. Format Check (Ensures it's a proper email address)
+        # 1. Format Check
         try:
             validate_email(value)
         except:
             raise serializers.ValidationError("Invalid email format.")
             
-        # 2. Uniqueness Check (CRITICAL FIX for IntegrityError)
-        if User.objects.filter(email=value).exists():
+        # 2. CRITICAL CHANGE: Only check against ACTIVE users. 
+        # Pending users in cache do not block new registrations.
+        if User.objects.filter(email=value, status__in=['active', 'pending_kyc', 'verified']).exists():
             raise serializers.ValidationError(
-                "This email address is already registered."
+                "This email address is already registered and active."
             )
         return value
 
     def validate_phone(self, value):
-        # Uniqueness Check for phone
-        if User.objects.filter(phone=value).exists():
+        # CRITICAL CHANGE: Only check against ACTIVE users.
+        if User.objects.filter(phone=value, status__in=['active', 'pending_kyc', 'verified']).exists():
             raise serializers.ValidationError(
-                "This phone number is already registered."
+                "This phone number is already registered and active."
             )
         return value
 
-    def validate_password(self, value):
-        validate_password_complexity(value) 
-        return value
+    # CRITICAL CHANGE: No 'create' method here. We use 'save' to store in cache.
+    def save(self, **kwargs):
+        # Store validated data in cache for verification, instead of saving to DB.
+        email = self.validated_data['email']
+        
+        # We cache the entire validated data dictionary for 15 minutes (enough time for OTP + verification)
+        cache_key = f'pre_register:{email}'
+        cache.set(cache_key, self.validated_data, timeout=900)
+        
+        # Trigger OTP using email
+        otp_code = generate_and_cache_otp(email, purpose='registration')
 
-    def create(self, validated_data):
-        email = validated_data.pop('email')
-        password = validated_data.pop('password')
-        phone = validated_data.pop('phone')
-        
-        user = User.objects.create_user(
-            email=email,
-            password=password,
-            phone=phone,
-            **validated_data
-        )
-        
-        user.status = 'pending'
-        user.save(update_fields=['status']) 
-        
-        # CRITICAL FIX: Trigger OTP using email
-        generate_and_cache_otp(user.email, purpose='registration')
-        
-        return user
+        # Return the email used for verification
+        return {'email': email, 'otp_code': otp_code} # Returning a dict, not a user instance
 
 
-# --- 2. OTP Verification Serializer (Now uses Email) ---
+# --- 2. OTP Verification Serializer (Now creates user and issues tokens) ---
 class OTPVerificationSerializer(serializers.Serializer):
-    """
-    Validates the email and the OTP code against the Redis cache.
-    """
-    email = serializers.EmailField(required=True) # Changed from phone to email
+    email = serializers.EmailField(required=True)
     otp_code = serializers.CharField(required=True, min_length=6, max_length=6)
 
     def validate(self, data):
-        email = data.get('email') # Use email as identifier
+        email = data.get('email')
         otp_code = data.get('otp_code')
         
-        try:
-            # Check only for users who are currently pending
-            user = User.objects.get(email=email, status='pending')
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"email": "User not found or already verified."})
+        # 1. Check Pre-Registration Cache
+        pre_register_data = cache.get(f'pre_register:{email}')
+        if not pre_register_data:
+            raise serializers.ValidationError({"email": "Registration process expired or email not found. Please register again."})
 
-        # CRITICAL FIX: Use email for cache key
+        # 2. Check OTP Cache
         cache_key = f'otp:registration:{email}' 
         stored_otp = cache.get(cache_key)
 
         if not stored_otp or stored_otp != otp_code:
             raise serializers.ValidationError({"otp_code": "Invalid or expired OTP."})
 
+        # CRITICAL: Store pre_register data for the final save step
+        data['pre_register_data'] = pre_register_data
+        
+        return data
+
+    @transaction.atomic # Ensure DB operations are all-or-nothing
+    def save(self, **kwargs):
+        data = self.validated_data['pre_register_data']
+        email = data['email']
+        password = data.pop('password')
+        
+        # 1. CREATE THE USER IN THE DATABASE (Only upon successful OTP verification)
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            phone=data['phone'],
+            status='active' # Immediately set to active since verification is complete
+        )
+        
+        # 2. Cleanup Caches
+        cache.delete(f'pre_register:{email}')
+        cache.delete(f'otp:registration:{email}')
+        
+        # 3. CRITICAL NEW LOGIC: Generate Tokens (No need for separate login)
+        refresh = RefreshToken.for_user(user)
+        
+        return {
+            'user': user,
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
+    
+
+# --- 3. Login OTP Request Serializer (NEW for 2FA Login) ---
+class LoginOTPRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        email = data.get('email')
+        password = data.get('password')
+        
+        user = User.objects.filter(email=email).first()
+
+        if user is None or not user.check_password(password):
+            raise serializers.ValidationError({"detail": "Invalid credentials."})
+        
+        if user.status != 'active' and user.status != 'verified':
+             raise serializers.ValidationError({"detail": f"Account status is '{user.status}'. Cannot log in."})
+        
+        # 1. User validated. Generate and send a new OTP for this session.
+        generate_and_cache_otp(user.email, purpose='login')
+        
+        # 2. Store the user object and success status
         data['user'] = user
         return data
+
+
+# --- 4. Login OTP Verification Serializer (NEW for 2FA Login) ---
+class LoginOTPVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    otp_code = serializers.CharField(required=True, min_length=6, max_length=6)
+
+    def validate(self, data):
+        email = data.get('email')
+        otp_code = data.get('otp_code')
+        
+        user = User.objects.filter(email=email).first()
+        if not user:
+             raise serializers.ValidationError({"email": "User not found."})
+
+        # Check OTP Cache
+        cache_key = f'otp:login:{email}' 
+        stored_otp = cache.get(cache_key)
+
+        if not stored_otp or stored_otp != otp_code:
+            raise serializers.ValidationError({"otp_code": "Invalid or expired OTP."})
+
+        # Cleanup Cache
+        cache.delete(cache_key)
+        
+        data['user'] = user
+        return data
+
+    def get_tokens_for_user(self, user):
+        # Generate Tokens
+        refresh = RefreshToken.for_user(user)
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
+
+    # CRITICAL NEW LOGIC: This save issues tokens after verification
+    def save(self, **kwargs):
+        user = self.validated_data['user']
+        tokens = self.get_tokens_for_user(user)
+        return tokens
 
 
 # --- 3. Custom JWT Serializer (Login Restriction) ---
@@ -163,41 +248,62 @@ class KYCSubmissionSerializer(serializers.Serializer):
         
         return value
 
+    @transaction.atomic
     def create(self, validated_data):
-        user = self.context['request'].user
-        
-        # Create Aadhaar and PAN records
+        request = self.context['request']
+        user = request.user
+    
+        # 1. Create the Aadhaar UserKYC record
         UserKYC.objects.create(
-            user=user, kyc_type='aadhaar', kyc_identifier=validated_data['aadhaar_identifier'], status='submitted'
+            user=user,
+            kyc_type='aadhaar', # Explicitly set type
+            kyc_identifier=validated_data['aadhaar_identifier'],
+            status='submitted'
         )
+    
+        # 2. Create the PAN UserKYC record
         UserKYC.objects.create(
-            user=user, kyc_type='pan', kyc_identifier=validated_data['pan_identifier'], status='submitted'
+            user=user,
+            kyc_type='pan', # Explicitly set type
+            kyc_identifier=validated_data['pan_identifier'],
+            status='submitted'
         )
-        
-        # Update User Status
-        if user.status == 'active':
-            user.status = 'pending_kyc' 
-            user.save(update_fields=['status', 'updated_at'])
-            
+    
+        # 3. Update the main User status
+        user.status = 'pending_kyc' 
+        user.save(update_fields=['status']) # <--- CRITICAL: Save the User object
+    
         return user
 
 
 # --- 5. User Status Serializer ---
 class UserStatusSerializer(serializers.ModelSerializer):
-    kyc_status = serializers.SerializerMethodField()
-
+    kyc_status = serializers.SerializerMethodField() # <--- Use SerializerMethodField
+    
     class Meta:
         model = User
         fields = ('id', 'email', 'phone', 'role', 'status', 'kyc_status', 'created_at')
         read_only_fields = fields
 
-    def get_kyc_status(self, obj):
-        # We assume related_name='kyc_records' on the ForeignKey in UserKYC
-        last_kyc = obj.kyc_records.order_by('-created_at').first() 
-        if not last_kyc:
-            return {'status': 'not_submitted', 'submitted_at': None}
-        return {
-            'status': last_kyc.status,
-            'submitted_at': last_kyc.created_at,
-            'verified_at': last_kyc.verified_at
-        }
+    def get_kyc_status(self, user):
+        """
+        Fetches the latest KYC submission status and timestamp.
+        """
+        try:
+            # Assumes you have a 'user' related name on UserKYC (default is userkyc_set)
+            # Find the most recent, successfully created KYC record
+            latest_kyc = UserKYC.objects.filter(user=user).latest('submitted_at') 
+            
+            # If a record is found, return its data
+            return {
+                "status": latest_kyc.status, # e.g., 'submitted', 'verified', 'rejected'
+                "submitted_at": latest_kyc.submitted_at, # <--- CRITICAL FIX: Timestamp
+                "verified_at": latest_kyc.verified_at,   # Include verified_at if applicable
+            }
+        except UserKYC.DoesNotExist:
+            # If no KYC record is found, return the initial state
+            return {
+                "status": "not_submitted",
+                "submitted_at": None,
+                "verified_at": None,
+            }

@@ -10,16 +10,19 @@ from .serializers import ( # Cleaned and centralized imports
     OTPVerificationSerializer, 
     CustomTokenObtainPairSerializer, 
     KYCSubmissionSerializer, 
-    UserStatusSerializer
+    UserStatusSerializer,
+    LoginOTPRequestSerializer,    
+    LoginOTPVerificationSerializer,
 )
 
 # Import SimpleJWT for token generation later
 # Note: The CustomTokenObtainPairView uses the imported TokenObtainPairView
 
+# --- 1. Registration (Pre-DB Save) ---
 class RegisterAPIView(generics.CreateAPIView):
     """
     POST /api/v1/auth/register/
-    Registers a new user and sends an initial OTP for verification (via Email).
+    Stores data in cache and sends OTP, does NOT save to database yet.
     """
     serializer_class = UserRegistrationSerializer
     permission_classes = [] 
@@ -27,46 +30,82 @@ class RegisterAPIView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        
+        # CRITICAL CHANGE: Call save, which stores data in cache and sends OTP
+        result = serializer.save() 
         
         return Response({
-            "message": "User registered successfully. OTP sent to your email address for verification.",
-            "user_id": str(user.id),
-        }, status=status.HTTP_201_CREATED)
+            "message": f"Pre-registration successful. OTP sent to {result['email']} for verification.",
+            "email": result['email'], # Return email for next step
+        }, status=status.HTTP_200_OK) # Changed to 200 OK since no object was created in DB
     
 
+# --- 2. OTP Verification (Now performs DB Save and issues tokens) ---
 class OTPVerifyAPIView(views.APIView):
     """
     POST /api/v1/auth/verify-otp/
-    Verifies OTP using Email and activates the user account (status: 'pending' -> 'active').
+    Verifies OTP, CREATES the user in DB, and issues JWT tokens.
     """
-    permission_classes = [] 
+    permission_classes = []
     
     def post(self, request, *args, **kwargs):
         serializer = OTPVerificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        user = serializer.validated_data['user']
-        email = serializer.validated_data['email'] # Now uses email
+        # CRITICAL CHANGE: Call save, which creates user and issues tokens
+        result = serializer.save() 
+        user = result['user']
         
-        # 1. Account Activation (Critical database write)
-        user.status = 'active'
-        user.save(update_fields=['status', 'updated_at'])
-        
-        # 2. Cleanup: Clear OTP from cache immediately after successful use
-        cache.delete(f'otp:registration:{email}') # Use email for key
-
-        # 3. Response: Indicate success and next step (KYC)
         return Response({
-            "message": "Email verified successfully. Account is now active (status: 'active'). Proceed to secure login and KYC verification to unlock listing features."
+            "message": "Verification successful. Account created and active. Use the token to proceed with KYC.",
+            "user_id": str(user.id),
+            "access": result['access'],
+            "refresh": result['refresh'],
         }, status=status.HTTP_200_OK)
     
-class CustomTokenObtainPairView(TokenObtainPairView):
+
+
+# --- 3. Login OTP Request (NEW) ---
+class LoginOTPRequestAPIView(views.APIView):
     """
-    POST /api/v1/auth/token/
-    Uses the custom serializer to check user status before issuing a token.
+    POST /api/v1/auth/login/request-otp/
+    Authenticates user/password and sends a login OTP via email.
     """
-    serializer_class = CustomTokenObtainPairSerializer
+    permission_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = LoginOTPRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        user = serializer.validated_data['user']
+        
+        return Response({
+            "message": f"Authentication successful. OTP sent to {user.email} for 2FA.",
+            "email": user.email,
+        }, status=status.HTTP_200_OK)
+
+
+# --- 4. Login OTP Verification (NEW) ---
+class LoginOTPVerifyAPIView(views.APIView):
+    """
+    POST /api/v1/auth/login/verify-otp/
+    Verifies OTP and issues JWT tokens for login.
+    """
+    permission_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = LoginOTPVerificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # CRITICAL: Call save to issue tokens
+        tokens = serializer.save() 
+        
+        return Response({
+            "message": "Login 2FA successful. Tokens issued.",
+            "access": tokens['access'],
+            "refresh": tokens['refresh'],
+        }, status=status.HTTP_200_OK)
+
 
 
 # CRITICAL FIX: Simplify the KYCSubmissionAPIView

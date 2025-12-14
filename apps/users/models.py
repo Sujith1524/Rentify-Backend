@@ -2,9 +2,12 @@
 
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+# REMOVE: from django.contrib.auth import get_user_model  <--- DELETE THIS
 from apps.core.models import BaseModel
 
 
+# NOTE: Since we are defining the User model below, we can reference it directly.
+# The CustomUserManager must be defined before the User model.
 class CustomUserManager(BaseUserManager):
     """
     Custom user manager where email is the unique identifier for authentication 
@@ -68,10 +71,31 @@ class User(AbstractUser, BaseModel):
     def __str__(self):
         return self.email
 
+# --- Define the KYC Status Choices ---
+KYC_STATUS_CHOICES = (
+    ('submitted', 'Submitted'),
+    ('verified', 'Verified'),
+    ('rejected', 'Rejected'),
+)
+# -------------------------------------
+
+# UserKYC can reference the User model directly as it is defined above.
 class UserKYC(BaseModel):
-    # FIXED related_name to kyc_records to match serializer logic
+    # Foreign Key now points to the User class defined immediately above
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='kyc_records') 
-    kyc_type = models.CharField(max_length=20) 
+    
+    kyc_type = models.CharField(max_length=20, choices=[('aadhaar', 'Aadhaar'), ('pan', 'PAN')])
     kyc_identifier = models.CharField(max_length=100)
-    status = models.CharField(max_length=20, default='submitted')
+    
+    status = models.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default='submitted')
+    
+    submitted_at = models.DateTimeField(auto_now_add=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        get_latest_by = 'submitted_at'
+        unique_together = ('kyc_type', 'kyc_identifier')
+        ordering = ['-submitted_at']
+        
+    def __str__(self):
+        return f"{self.user.email} - {self.kyc_type} - {self.status}"

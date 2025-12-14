@@ -1,7 +1,7 @@
 # apps/users/tasks.py
 from config.celery import app
 from django.core.cache import cache
-from django.core.mail import send_mail # <--- NEW IMPORT
+from django.core.mail import send_mail
 from django.template.loader import render_to_string # Optional for fancy HTML email
 
 @app.task
