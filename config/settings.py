@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -169,11 +170,9 @@ REST_FRAMEWORK = {
 }
 
 # --- Simple JWT Configuration (Matching your current token lifespan) ---
-from datetime import timedelta
-
 SIMPLE_JWT = {
-    # Keep access token valid for 5 minutes (300 seconds) - current setting is 5 minutes
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    # Keep access token valid for 20 minutes (1200 seconds) - current setting is 20 minutes
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=20),
     # Keep refresh token valid for 168 hours (7 day) - current setting is much longer, let's standardize
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7), 
     
