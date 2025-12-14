@@ -13,14 +13,26 @@ def send_otp_async(user_identifier, otp_code, purpose):
     """
     subject = f"Rentify: Your {purpose.capitalize()} Verification Code"
     
-    # Simple Plain Text Email Body
+    # Professional Plain Text Email Body
     message = (
-        f"Hi there,\n\n"
-        f"Your one-time verification code for Rentify is: {otp_code}\n\n"
-        f"This code is valid for 5 minutes.\n"
-        f"If you did not request this, please ignore this email.\n\n"
-        f"The Rentify Team"
-    )
+        f"Hello,\n\n"
+        f"You are receiving this email because a verification request was made for your Rentify account.\n\n"
+        f"=====================================\n"
+        f"        YOUR VERIFICATION CODE\n"
+        f"=====================================\n\n"
+        f"              {otp_code}\n\n"
+        f"=====================================\n\n"
+        f"This one-time password (OTP) is valid for 5 minutes and is required to complete your verification.\n"
+        f"Please do not share this code with anyone for security reasons.\n\n"
+        f"About Rentify:\n"
+        f"Rentify is a trusted digital marketplace that enables users to rent and purchase products securely. "
+        f"Our platform is built with enterprise-grade security and scalability to ensure a safe and reliable experience.\n\n"
+        f"If you did not initiate this request, you can safely ignore this email. "
+        f"No changes will be made to your account.\n\n"
+        f"Best regards,\n"
+        f"The Rentify Team\n"
+)
+
 
     try:
         # Use Django's send_mail function

@@ -52,7 +52,6 @@ class User(AbstractUser, BaseModel):
     STATUS_CHOICES = (
         ('pending', 'Pending Email Verification'),
         ('active', 'Email Verified, Pre-KYC'),
-        ('pending_kyc', 'Waiting for KYC Review'),
         ('verified', 'Full Verified User'),
         ('rejected', 'KYC Rejected'),
         ('suspended', 'Account Suspended'),

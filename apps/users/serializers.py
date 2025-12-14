@@ -256,22 +256,22 @@ class KYCSubmissionSerializer(serializers.Serializer):
         # 1. Create the Aadhaar UserKYC record
         UserKYC.objects.create(
             user=user,
-            kyc_type='aadhaar', # Explicitly set type
+            kyc_type='aadhaar',
             kyc_identifier=validated_data['aadhaar_identifier'],
-            status='submitted'
+            status='verified' # Set KYC record status to verified
         )
     
         # 2. Create the PAN UserKYC record
         UserKYC.objects.create(
             user=user,
-            kyc_type='pan', # Explicitly set type
+            kyc_type='pan',
             kyc_identifier=validated_data['pan_identifier'],
-            status='submitted'
+            status='verified' # Set KYC record status to verified
         )
     
-        # 3. Update the main User status
-        user.status = 'pending_kyc' 
-        user.save(update_fields=['status']) # <--- CRITICAL: Save the User object
+        # 3. CRITICAL FIX: Update the main User status to 'verified' for immediate access
+        user.status = 'verified' 
+        user.save(update_fields=['status']) 
     
         return user
 

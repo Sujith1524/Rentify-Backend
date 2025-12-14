@@ -129,7 +129,8 @@ class KYCSubmissionAPIView(views.APIView): # Change from generics.CreateAPIView 
         
         # 4. Return success response
         return Response({
-            "message": "KYC details submitted successfully. Status is now 'pending_kyc'. We will notify you upon verification.",
+            # CRITICAL FIX: Update message to reflect immediate verification
+            "message": "KYC details submitted and instantly verified for demo purposes. Status is now 'verified'.",
             "status": user.status 
         }, status=status.HTTP_201_CREATED)
     
