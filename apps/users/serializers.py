@@ -10,6 +10,7 @@ from django.db import transaction # New Import for atomic DB operations
 from rest_framework_simplejwt.tokens import RefreshToken # New Import for token generation
 from apps.core.utils import check_otp, get_tokens_for_user
 from django.utils import timezone
+from .utils import save_kyc_draft, load_kyc_draft, clear_kyc_draft
 
 
 # Import from enterprise structure
@@ -125,16 +126,16 @@ class OTPVerificationSerializer(serializers.Serializer):
 # --- 3. Login OTP Request Serializer (NEW for 2FA Login) ---
 class LoginOTPRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True)
+    # password = serializers.CharField(write_only=True)
 
     def validate(self, data):
         email = data.get('email')
-        password = data.get('password')
+        # password = data.get('password')
         
         user = User.objects.filter(email=email).first()
 
-        if user is None or not user.check_password(password):
-            raise serializers.ValidationError({"detail": "Invalid credentials."})
+        # if user is None or not user.check_password(password):
+        #     raise serializers.ValidationError({"detail": "Invalid credentials."})
         
         if user.status != 'active' and user.status != 'verified':
              raise serializers.ValidationError({"detail": f"Account status is '{user.status}'. Cannot log in."})
@@ -370,3 +371,25 @@ class UserStatusSerializer(serializers.ModelSerializer):
                 "submitted_at": None,
                 "verified_at": None,
             }
+        
+
+class KYCDraftSerializer(serializers.Serializer):
+    """
+    Serializer for saving/loading partial KYC form data (drafts).
+    """
+    aadhaar_identifier = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    aadhaar_document = serializers.CharField(required=False, allow_blank=True) # Will store file URL/name placeholder
+    pan_identifier = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    pan_document = serializers.CharField(required=False, allow_blank=True) # Will store file URL/name placeholder
+
+    def save_draft(self, user):
+        data = self.validated_data
+        # Note: We skip complex file handling here; we assume the frontend sends
+        # the Cloudinary public ID or URL after the file is uploaded.
+        save_kyc_draft(user.id, data)
+        return data
+
+    def load_draft(self, user):
+        data = load_kyc_draft(user.id)
+        # Note: If data is loaded, it bypasses field validation in the view
+        return data

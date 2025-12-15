@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.core.cache import cache
+from .serializers import KYCDraftSerializer
+from .utils import load_kyc_draft, clear_kyc_draft
 from .serializers import ( # Cleaned and centralized imports
     UserRegistrationSerializer, 
     OTPVerificationSerializer, 
@@ -141,20 +143,19 @@ class KYCSubmissionAPIView(views.APIView): # Change from generics.CreateAPIView 
     permission_classes = [IsAuthenticated] 
 
     def post(self, request, *args, **kwargs):
-        # 1. Instantiate the serializer with request data
-        serializer = KYCSubmissionSerializer(data=request.data, context={'request': request})
-        
-        # 2. Validate the data (format and uniqueness checks)
+        serializer = self.serializer_class(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         
-        # 3. Perform the custom creation logic (DB writes and status update happen here)
-        user = serializer.create(serializer.validated_data)
-    
-        # 4. Return success response
+        # This calls the create method which saves data to DB and sets status to 'pending_kyc'
+        serializer.save()
+        
+        # CRITICAL FIX: Clear the draft from cache upon successful final submission
+        clear_kyc_draft(request.user.id)
+        
+        # ... (rest of the response)
         return Response({
-            # Revert message to reflect awaiting review
             "message": "KYC details submitted successfully. Status is now 'pending_kyc' and awaiting verification.",
-            "status": user.status 
+            "status": request.user.status 
         }, status=status.HTTP_201_CREATED)
     
 
@@ -171,4 +172,39 @@ class UserStatusAPIView(generics.RetrieveAPIView):
     
 
 
+class KYCDraftSaveAPIView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/kyc/save-draft/
+    Saves partially entered KYC data to the cache for recovery.
+    """
+    serializer_class = KYCDraftSerializer
+    permission_classes = [IsAuthenticated]
 
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=False) # Important: Allow invalid data for drafts
+
+        serializer.save_draft(request.user)
+        
+        return Response({
+            "message": "KYC draft saved successfully to cache.",
+        }, status=status.HTTP_200_OK)
+
+
+class KYCDraftLoadAPIView(generics.RetrieveAPIView):
+    """
+    GET /api/v1/auth/kyc/load-draft/
+    Retrieves the last saved KYC draft from the cache.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        draft_data = load_kyc_draft(request.user.id)
+        
+        if draft_data:
+            return Response(draft_data, status=status.HTTP_200_OK)
+        
+        return Response({
+            "message": "No KYC draft found.",
+            "data": {}
+        }, status=status.HTTP_404_NOT_FOUND)
