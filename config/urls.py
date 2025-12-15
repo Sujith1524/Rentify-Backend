@@ -22,6 +22,7 @@ from django.conf.urls.static import static # Import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/auth/', include('apps.users.urls')),
+    path('api/v1/listings/', include('apps.listings.urls')),
 ]
 
 # CRITICAL FIX: Only serve media files in DEBUG mode
