@@ -3,19 +3,26 @@
 from rest_framework import views, generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.views import TokenObtainPairView
 from django.core.cache import cache
-from .serializers import KYCDraftSerializer
 from .utils import load_kyc_draft, clear_kyc_draft
-from .serializers import ( # Cleaned and centralized imports
+from django.contrib.auth import get_user_model
+from rest_framework.permissions import IsAdminUser
+from apps.users.permissions import IsVerifiedOrStaff
+from django.utils import timezone
+from .models import UserKYC
+from django.db import transaction 
+from .serializers import ( 
     UserRegistrationSerializer, 
     OTPVerificationSerializer, 
-    CustomTokenObtainPairSerializer, 
     KYCSubmissionSerializer, 
     UserStatusSerializer,
     LoginOTPRequestSerializer,    
     LoginOTPVerificationSerializer,
+    KYCDraftSerializer,
+    KYCReviewSerializer
 )
+
+User = get_user_model()
 
 # Import SimpleJWT for token generation later
 # Note: The CustomTokenObtainPairView uses the imported TokenObtainPairView
@@ -208,3 +215,62 @@ class KYCDraftLoadAPIView(generics.RetrieveAPIView):
             "message": "No KYC draft found.",
             "data": {}
         }, status=status.HTTP_404_NOT_FOUND)
+    
+
+# Kyc Admin Approval Endpoint
+class KYCReviewAPIView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/admin/kyc-review/
+    Allows administrative staff to approve or reject a pending KYC submission.
+    """
+    serializer_class = KYCReviewSerializer
+    permission_classes = [IsAuthenticated, IsAdminUser] # Only staff can access
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        data = serializer.validated_data
+        user_uuid = data['user_id'] # Now this is a UUID object, not an integer
+        action = data['action']
+        reason = data.get('reason', '')
+        
+        # Retrieve the user using the UUID (pk=user_uuid)
+        user = User.objects.get(pk=user_uuid) 
+        now = timezone.now()
+        
+        if action == 'approve':
+            # 1. Update the main User status
+            user.status = 'verified'
+            user.save(update_fields=['status'])
+            
+            # 2. Update the related KYC records (Aadhaar and PAN)
+            UserKYC.objects.filter(user=user, status__in=['submitted', 'rejected']).update(
+                status='verified',
+                verified_at=now
+            )
+            
+            # TODO: OPTIONAL: Send a "KYC Approved" email notification to the user
+            message = f"User {user.email} KYC Approved. Status is now 'verified'."
+
+        elif action == 'reject':
+            # 1. Update the main User status
+            user.status = 'rejected'
+            user.save(update_fields=['status'])
+            
+            # 2. Update the related KYC records
+            UserKYC.objects.filter(user=user, status__in=['submitted', 'rejected']).update(
+                status='rejected',
+                verified_at=now, # Using verified_at to mark review time
+                review_reason=reason # Assuming you added a review_reason field to UserKYC
+            )
+            
+            # TODO: OPTIONAL: Send a "KYC Rejected" email with the reason to the user
+            message = f"User {user.email} KYC Rejected. Status is now 'rejected'. Reason: {reason}"
+
+        return Response({
+            "message": message,
+            "user_status": user.status,
+            "kyc_updated": True
+        }, status=status.HTTP_200_OK)

@@ -10,7 +10,7 @@ from django.db import transaction # New Import for atomic DB operations
 from rest_framework_simplejwt.tokens import RefreshToken # New Import for token generation
 from apps.core.utils import check_otp, get_tokens_for_user
 from django.utils import timezone
-from .utils import save_kyc_draft, load_kyc_draft, clear_kyc_draft
+from .utils import save_kyc_draft, load_kyc_draft
 
 
 # Import from enterprise structure
@@ -126,24 +126,32 @@ class OTPVerificationSerializer(serializers.Serializer):
 # --- 3. Login OTP Request Serializer (NEW for 2FA Login) ---
 class LoginOTPRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
-    # password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True)
 
     def validate(self, data):
         email = data.get('email')
-        # password = data.get('password')
+        password = data.get('password')
         
         user = User.objects.filter(email=email).first()
 
-        # if user is None or not user.check_password(password):
-        #     raise serializers.ValidationError({"detail": "Invalid credentials."})
+        # 1. Standard Authentication Check
+        if user is None or not user.check_password(password):
+            raise serializers.ValidationError({"detail": "Invalid credentials."})
         
-        if user.status != 'active' and user.status != 'verified':
-             raise serializers.ValidationError({"detail": f"Account status is '{user.status}'. Cannot log in."})
+        # 2. CRITICAL FIX: Account Status Check
+        # Define statuses that are allowed to log in. 
+        # We explicitly allow all KYC-related states.
+        ALLOWED_LOGIN_STATUSES = ['active', 'pending_kyc', 'rejected', 'verified']
         
-        # 1. User validated. Generate and send a new OTP for this session.
+        if user.status not in ALLOWED_LOGIN_STATUSES:
+            # This catch-all handles any custom disabling statuses (e.g., 'suspended', 'banned')
+            raise serializers.ValidationError({"detail": f"Account status is '{user.status}'. Access to login is currently restricted."})
+            
+        # 3. User validated. Generate and send a new OTP for this session.
+        # This function should be imported from your utils or tasks
         generate_and_cache_otp(user.email, purpose='login')
         
-        # 2. Store the user object and success status
+        # 4. Store the user object
         data['user'] = user
         return data
 
@@ -198,40 +206,6 @@ class LoginOTPVerificationSerializer(serializers.Serializer):
         tokens['user'] = user 
         
         return tokens
-
-
-# --- 3. Custom JWT Serializer (Login Restriction) ---
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """
-    Overrides the default JWT serializer to enforce that the user status is 'active'.
-    """
-    @classmethod
-    def get_token(cls, user):
-        token = super().get_token(user)
-        
-        # Add custom claims to the JWT payload
-        token['status'] = user.status
-        token['role'] = user.role
-        
-        return token
-
-    def validate(self, attrs):
-        data = super().validate(attrs)
-
-        user = self.user
-        
-        # Enterprise-level restriction: Only active users can log in
-        if user.status != 'active':
-            if user.status == 'pending':
-                raise serializers.ValidationError(
-                    {"detail": "Account is pending OTP verification. Please verify your Email first."}
-                )
-            # Catches pending_kyc, suspended, etc.
-            raise serializers.ValidationError(
-                {"detail": f"Account status is '{user.status}'. You cannot log in until your account is active."}
-            )
-
-        return data
 
 
 # --- 4. KYC Submission Serializer ---
@@ -393,3 +367,30 @@ class KYCDraftSerializer(serializers.Serializer):
         data = load_kyc_draft(user.id)
         # Note: If data is loaded, it bypasses field validation in the view
         return data
+    
+    
+class KYCReviewSerializer(serializers.Serializer):
+    """
+    Handles the action of an admin reviewing a user's KYC submission.
+    """
+    # CRITICAL FIX: Change to UUIDField to accept the UUID string
+    user_id = serializers.UUIDField(required=True) 
+    action = serializers.ChoiceField(choices=['approve', 'reject'], required=True)
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True) 
+
+    def validate_user_id(self, value):
+        # DRF's UUIDField automatically validates the format of the string.
+        # Here, 'value' is already converted to a Python UUID object.
+        
+        # Ensure the user exists using the UUID object
+        try:
+            # We must use pk=value because the user model's primary key is the UUID
+            user = User.objects.get(pk=value) 
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User not found.")
+        
+        # Ensure the user is in a reviewable state
+        if user.status not in ['pending_kyc', 'rejected']:
+            raise serializers.ValidationError(f"User is not in a reviewable state. Current status: {user.status}")
+            
+        return value

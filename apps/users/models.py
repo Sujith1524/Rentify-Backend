@@ -99,6 +99,7 @@ class UserKYC(BaseModel):
     status = models.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default='submitted')
     submitted_at = models.DateTimeField(auto_now_add=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+    review_reason = models.TextField(null=True, blank=True)
     
     class Meta:
         get_latest_by = 'submitted_at'
