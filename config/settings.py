@@ -45,6 +45,10 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+
+    'cloudinary_storage', # New app for storage
+    'cloudinary',         # Cloudinary SDK
+
     'apps.core',
     'apps.users',
 ]
@@ -252,10 +256,18 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 
-# BASE_DIR is assumed to be defined at the top
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
 # STATIC settings (Keep for reference)
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static_root')
+
+
+# 2. CLOUDINARY CONFIGURATION (Replace placeholders with your actual credentials)
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': os.getenv("CLOUD_NAME"),
+    'API_KEY': os.getenv("CLOUD_API_KEY"),
+    'API_SECRET': os.getenv("CLOUD_API_SECRET"),
+}
+
+# 3. CRITICAL: Tell Django to use Cloudinary for all media files (user uploads)
+MEDIA_URL = '/media/'
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'

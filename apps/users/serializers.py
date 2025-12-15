@@ -237,54 +237,102 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 class KYCSubmissionSerializer(serializers.Serializer):
     """
     Handles Aadhaar and PAN format validation and global uniqueness checks.
+    Enforces EITHER kyc_identifier OR document_file submission for each type.
     """
-    aadhaar_identifier = serializers.CharField(required=True, max_length=12)
-    pan_identifier = serializers.CharField(required=True, max_length=10)
+    # Aadhaar fields
+    aadhaar_identifier = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    aadhaar_document = serializers.FileField(required=False)
+
+    # PAN fields
+    pan_identifier = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    pan_document = serializers.FileField(required=False)
+    
+    # ----------------------------------------------------
+    # Individual Field Validation (Runs only if field is provided)
+    # ----------------------------------------------------
 
     def validate_aadhaar_identifier(self, value):
+        # Format Check
         if not re.fullmatch(r'^\d{12}$', value):
             raise serializers.ValidationError("Aadhaar must be exactly 12 digits.")
         
-        # Security Check
+        # Uniqueness Check
         if UserKYC.objects.filter(kyc_type='aadhaar', kyc_identifier=value, status__in=['verified', 'submitted']).exists():
+            # User Story: Notify the user without revealing the existing account identity
             raise serializers.ValidationError("Aadhaar number is already in use by another account.")
         
         return value
 
     def validate_pan_identifier(self, value):
         value = value.upper()
+        # Format Check (e.g., AAAAA9999A)
         if not re.fullmatch(r'^[A-Z]{5}\d{4}[A-Z]{1}$', value):
             raise serializers.ValidationError("PAN must follow the alphanumeric format (e.g., ABCDE1234Z).")
 
-        # Security Check
+        # Uniqueness Check
         if UserKYC.objects.filter(kyc_type='pan', kyc_identifier=value, status__in=['verified', 'submitted']).exists():
+            # User Story: Notify the user without revealing the existing account identity
             raise serializers.ValidationError("PAN is already in use by another account.")
         
         return value
 
+    # ----------------------------------------------------
+    # Global Validation (CRITICAL: Enforces EITHER/OR logic)
+    # ----------------------------------------------------
+    def validate(self, data):
+        
+        # --- Aadhaar EITHER/OR Check ---
+        aadhaar_id = data.get('aadhaar_identifier')
+        aadhaar_doc = data.get('aadhaar_document')
+        
+        # CRITICAL: Check if NEITHER the identifier NOR the document is provided
+        if not aadhaar_id and not aadhaar_doc:
+            raise serializers.ValidationError({
+                'aadhaar': "Either the Aadhaar Identifier or the Aadhaar Document must be submitted."
+            })
+            
+        # --- PAN EITHER/OR Check ---
+        pan_id = data.get('pan_identifier')
+        pan_doc = data.get('pan_document')
+
+        # CRITICAL: Check if NEITHER the identifier NOR the document is provided
+        if not pan_id and not pan_doc:
+            raise serializers.ValidationError({
+                'pan': "Either the PAN Identifier or the PAN Document must be submitted."
+            })
+
+        return data
+
+    # ----------------------------------------------------
+    # Create Method (Handles saving both fields)
+    # ----------------------------------------------------
     @transaction.atomic
     def create(self, validated_data):
-        request = self.context['request']
-        user = request.user
+        user = self.context['request'].user
     
         # 1. Create the Aadhaar UserKYC record
         UserKYC.objects.create(
             user=user,
             kyc_type='aadhaar',
-            kyc_identifier=validated_data['aadhaar_identifier'],
-            status='submitted' # Set KYC record status to submitted
+            # Stores ID (if provided) or None
+            kyc_identifier=validated_data.get('aadhaar_identifier'), 
+            # Stores File (Cloudinary URL) (if provided) or None
+            document_file=validated_data.get('aadhaar_document'), 
+            status='submitted'
         )
     
         # 2. Create the PAN UserKYC record
         UserKYC.objects.create(
             user=user,
             kyc_type='pan',
-            kyc_identifier=validated_data['pan_identifier'],
-            status='submitted' # Set KYC record status to submitted
+            # Stores ID (if provided) or None
+            kyc_identifier=validated_data.get('pan_identifier'),
+            # Stores File (Cloudinary URL) (if provided) or None
+            document_file=validated_data.get('pan_document'),
+            status='submitted'
         )
     
-        # 3. CRITICAL FIX: Update the main User status to 'pending_kyc' 
-        # as per the User Story (awaiting admin review).
+        # 3. Update the main User status to 'pending_kyc' 
         user.status = 'pending_kyc' 
         user.save(update_fields=['status']) 
     

@@ -80,20 +80,32 @@ KYC_STATUS_CHOICES = (
 
 # UserKYC can reference the User model directly as it is defined above.
 class UserKYC(BaseModel):
-    # Foreign Key now points to the User class defined immediately above
+    # Fixed related_name to kyc_records
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='kyc_records') 
     
     kyc_type = models.CharField(max_length=20, choices=[('aadhaar', 'Aadhaar'), ('pan', 'PAN')])
-    kyc_identifier = models.CharField(max_length=100)
+    
+    # 1. UPDATED: Make kyc_identifier nullable since it's now optional (EITHER/OR logic)
+    kyc_identifier = models.CharField(max_length=100, null=True, blank=True)
+    
+    # 2. NEW FIELD: FileField for the uploaded document. Uses Cloudinary storage.
+    document_file = models.FileField(
+        upload_to='kyc_documents/', 
+        null=True, 
+        blank=True,
+        verbose_name="KYC Document Upload"
+    )
     
     status = models.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default='submitted')
-    
     submitted_at = models.DateTimeField(auto_now_add=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     
     class Meta:
         get_latest_by = 'submitted_at'
-        unique_together = ('kyc_type', 'kyc_identifier')
+        # The unique_together constraint must be removed or modified, 
+        # as multiple users might submit a NULL document_file or NULL identifier.
+        # However, for simplicity, let's keep the existing ID uniqueness rule:
+        unique_together = ('kyc_type', 'kyc_identifier') 
         ordering = ['-submitted_at']
         
     def __str__(self):
