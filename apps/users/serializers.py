@@ -8,6 +8,9 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.core.validators import validate_email # For email format validation
 from django.db import transaction # New Import for atomic DB operations
 from rest_framework_simplejwt.tokens import RefreshToken # New Import for token generation
+from apps.core.utils import check_otp, get_tokens_for_user
+from django.utils import timezone
+
 
 # Import from enterprise structure
 from apps.core.utils import validate_password_complexity 
@@ -146,42 +149,53 @@ class LoginOTPRequestSerializer(serializers.Serializer):
 
 # --- 4. Login OTP Verification Serializer (NEW for 2FA Login) ---
 class LoginOTPVerificationSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True)
-    otp_code = serializers.CharField(required=True, min_length=6, max_length=6)
+    email = serializers.EmailField()
+    otp_code = serializers.CharField(max_length=6)
 
     def validate(self, data):
         email = data.get('email')
         otp_code = data.get('otp_code')
-        
-        user = User.objects.filter(email=email).first()
-        if not user:
-             raise serializers.ValidationError({"email": "User not found."})
 
-        # Check OTP Cache
-        cache_key = f'otp:login:{email}' 
-        stored_otp = cache.get(cache_key)
+        # 1. Basic user check
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "User with this email not found."})
 
-        if not stored_otp or stored_otp != otp_code:
-            raise serializers.ValidationError({"otp_code": "Invalid or expired OTP."})
+        # 2. Verify OTP against cache
+        if not check_otp(email, otp_code, purpose='login'):
+            raise serializers.ValidationError({"otp_code": "Invalid or expired OTP code."})
 
-        # Cleanup Cache
-        cache.delete(cache_key)
-        
+        # 3. Final validation success: attach user to validated_data
         data['user'] = user
         return data
 
     def get_tokens_for_user(self, user):
-        # Generate Tokens
-        refresh = RefreshToken.for_user(user)
-        return {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        }
+        # Assuming this utility function is defined, perhaps imported from .utils
+        # and returns {'access': '...', 'refresh': '...'}
+        return get_tokens_for_user(user)
 
-    # CRITICAL NEW LOGIC: This save issues tokens after verification
     def save(self, **kwargs):
+        """
+        Generates JWT tokens and cleans up the cache entry.
+        """
         user = self.validated_data['user']
+        
+        # 1. Generate tokens
         tokens = self.get_tokens_for_user(user)
+        
+        # 2. Cleanup cache
+        key = f'otp:login:{user.email}'
+        cache.delete(key)
+        
+        # 3. Update last login time (Optional, but good practice)
+        user.last_login = timezone.now()
+        user.save(update_fields=['last_login'])
+        
+        # 4. CRITICAL FIX: Include the user object in the return dictionary
+        # The view (LoginOTPVerifyAPIView) will use this to check the status.
+        tokens['user'] = user 
+        
         return tokens
 
 
@@ -258,7 +272,7 @@ class KYCSubmissionSerializer(serializers.Serializer):
             user=user,
             kyc_type='aadhaar',
             kyc_identifier=validated_data['aadhaar_identifier'],
-            status='verified' # Set KYC record status to verified
+            status='submitted' # Set KYC record status to submitted
         )
     
         # 2. Create the PAN UserKYC record
@@ -266,11 +280,12 @@ class KYCSubmissionSerializer(serializers.Serializer):
             user=user,
             kyc_type='pan',
             kyc_identifier=validated_data['pan_identifier'],
-            status='verified' # Set KYC record status to verified
+            status='submitted' # Set KYC record status to submitted
         )
     
-        # 3. CRITICAL FIX: Update the main User status to 'verified' for immediate access
-        user.status = 'verified' 
+        # 3. CRITICAL FIX: Update the main User status to 'pending_kyc' 
+        # as per the User Story (awaiting admin review).
+        user.status = 'pending_kyc' 
         user.save(update_fields=['status']) 
     
         return user

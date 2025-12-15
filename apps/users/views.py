@@ -90,6 +90,7 @@ class LoginOTPVerifyAPIView(views.APIView):
     """
     POST /api/v1/auth/login/verify-otp/
     Verifies OTP and issues JWT tokens for login.
+    Checks user status to advise the frontend on the next mandatory step (KYC).
     """
     permission_classes = []
 
@@ -97,13 +98,35 @@ class LoginOTPVerifyAPIView(views.APIView):
         serializer = LoginOTPVerificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # CRITICAL: Call save to issue tokens
-        tokens = serializer.save() 
+        # 1. Call save() to verify OTP, delete cache, and issue tokens.
+        #    NOTE: The serializer's save() method must return a dictionary 
+        #    containing {'access': ..., 'refresh': ..., 'user': user_object}
+        tokens_and_user = serializer.save() 
         
+        # 2. CRITICAL FIX: Extract user object and tokens
+        user = tokens_and_user.pop('user') # Get user object
+        tokens = tokens_and_user           # Tokens are the remaining items
+
+        # 3. Determine the required next step based on the strict User Story status
+        next_step = 'listings_access' # Default to full access
+
+        if user.status == 'active':
+            # User verified email but hasn't submitted KYC yet
+            next_step = 'kyc_required' 
+        elif user.status == 'pending_kyc':
+            # User submitted KYC but is waiting for admin review (User Story status)
+            next_step = 'pending_review' 
+        elif user.status == 'rejected':
+            # User's KYC was rejected
+            next_step = 'kyc_resubmit_required' 
+        
+        # 4. Return the final response
         return Response({
-            "message": "Login 2FA successful. Tokens issued.",
+            "message": f"Login 2FA successful. Your current status is '{user.status}'.",
             "access": tokens['access'],
             "refresh": tokens['refresh'],
+            "user_status": user.status, 
+            "next_step": next_step      # Frontend uses this field to redirect the user
         }, status=status.HTTP_200_OK)
 
 
@@ -126,11 +149,11 @@ class KYCSubmissionAPIView(views.APIView): # Change from generics.CreateAPIView 
         
         # 3. Perform the custom creation logic (DB writes and status update happen here)
         user = serializer.create(serializer.validated_data)
-        
+    
         # 4. Return success response
         return Response({
-            # CRITICAL FIX: Update message to reflect immediate verification
-            "message": "KYC details submitted and instantly verified for demo purposes. Status is now 'verified'.",
+            # Revert message to reflect awaiting review
+            "message": "KYC details submitted successfully. Status is now 'pending_kyc' and awaiting verification.",
             "status": user.status 
         }, status=status.HTTP_201_CREATED)
     
