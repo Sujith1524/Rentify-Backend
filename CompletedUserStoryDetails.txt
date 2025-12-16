@@ -1,0 +1,13 @@
+Rentify
+
+✅ Registration and OTP Login Flow
+
+✅ Comprehensive KYC Submission and Admin Review
+
+✅ Secure, OTP-based Password Reset
+
+✅ Brute-Force Protection
+
+✅ Post-Reset Session Termination (High Security)
+
+✅ Explicit Logout/Token Blacklisting

@@ -4,18 +4,14 @@ import re
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.core.validators import validate_email # For email format validation
 from django.db import transaction # New Import for atomic DB operations
 from rest_framework_simplejwt.tokens import RefreshToken # New Import for token generation
 from apps.core.utils import check_otp, get_tokens_for_user
 from django.utils import timezone
 from .utils import save_kyc_draft, load_kyc_draft
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
-from django.core.exceptions import ValidationError as DjangoValidationError
-from django.utils.http import urlsafe_base64_decode
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 from .utils import validate_otp, clear_otp_from_cache
 from .utils import (
     generate_and_cache_otp, 
@@ -491,3 +487,34 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         clear_otp_from_cache(user.email, purpose='reset')
         
         return user
+    
+
+class LogoutSerializer(serializers.Serializer):
+    """
+    Serializer to accept and validate the Refresh Token for blacklisting.
+    """
+    refresh = serializers.CharField(required=True)
+
+    def validate(self, attrs):
+        self.token = attrs['refresh']
+        return attrs
+
+    def save(self, **kwargs):
+        """
+        Attempts to blacklist the token.
+        """
+        try:
+            # 1. Instantiate the RefreshToken object with the token string
+            token = RefreshToken(self.token)
+            
+            # 2. Blacklist the token (this is the core logout action)
+            token.blacklist()
+            
+        except TokenError:
+            # This handles cases where the token is already blacklisted, expired, 
+            # or malformed. We let it fail silently to avoid leaking info.
+            # In a real-world scenario, you might log this error.
+            pass
+        except Exception as e:
+            # General error handling
+            raise serializers.ValidationError({"detail": "Error during token invalidation."})

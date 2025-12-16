@@ -11,6 +11,7 @@ from .views import (
     KYCReviewAPIView,
     PasswordResetRequestAPIView,
     PasswordResetConfirmAPIView,
+    LogoutAPIView,
 )
 from rest_framework_simplejwt.views import TokenRefreshView 
 
@@ -37,4 +38,7 @@ urlpatterns = [
     # PASSWORD RESET FLOW
     path('password/reset/request/', PasswordResetRequestAPIView.as_view(), name='password-reset-request'),
     path('password/reset/confirm/', PasswordResetConfirmAPIView.as_view(), name='password-reset-confirm'),
+
+    # Explicit Logout (Means the user try to logout the refresh token also get blacklist)
+    path('logout/', LogoutAPIView.as_view(), name='logout'), 
 ]

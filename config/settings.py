@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'cloudinary_storage', # New app for storage
     'cloudinary',         # Cloudinary SDK
 
+    'rest_framework_simplejwt.token_blacklist',
     'apps.core',
     'apps.users',
     'apps.listings',

@@ -23,6 +23,7 @@ from .serializers import (
     KYCReviewSerializer,
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
+    LogoutSerializer,
 )
 
 User = get_user_model()
@@ -320,3 +321,26 @@ class PasswordResetConfirmAPIView(generics.GenericAPIView):
         return Response({
             "message": "Password has been reset successfully. You can now log in with your new password."
         }, status=status.HTTP_200_OK)
+    
+
+class LogoutAPIView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/logout/
+    Blacklists the provided Refresh Token, effectively logging the user out 
+    from all devices (or specific device if only Access Token is terminated).
+    Blacklisting the Refresh Token invalidates all future Access Tokens.
+    """
+    serializer_class = LogoutSerializer
+    permission_classes = [IsAuthenticated] # User must be logged in to log out
+
+    def post(self, request, *args, **kwargs):
+        # We read the Refresh Token from the request body
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # The save method handles the blacklisting logic
+        serializer.save()
+        
+        # Rule 3: Return a success message indicating session termination
+        return Response({"message": "Successfully logged out. Your session has been terminated."}, 
+                        status=status.HTTP_200_OK)
