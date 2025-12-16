@@ -410,9 +410,9 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         try:
             user = User.objects.get(email=value)
         except User.DoesNotExist:
-            self.user = None
-            return value
-
+            # DANGER: THIS EXPOSES USER EXISTENCE (Violation of OWASP)
+            raise serializers.ValidationError("Account not found with this email address.") 
+        
         # 2. Block suspended/disabled accounts
         if user.status == 'suspended' or user.status == 'disabled':
              raise serializers.ValidationError("Account is suspended or deactivated. Cannot initiate password reset.")

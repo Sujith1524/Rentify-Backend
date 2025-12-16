@@ -288,15 +288,17 @@ class PasswordResetRequestAPIView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
+        # If validate_email fails (user not found), the next line throws 
+        # a 400 Bad Request error with the message "Account not found..."
         serializer = self.get_serializer(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=False) # Allow invalid email to pass validation silently
+        serializer.is_valid(raise_exception=True) 
 
-        # Save handles validation and email sending
+        # If validation succeeds (user found), we proceed
         serializer.save(request=request)
 
-        # Security Rule: Always return 200 OK regardless of email existence
+        # Success message when user is found and OTP is sent
         return Response({
-            "message": "If an account with that email exists, a password reset link has been sent."
+            "message": "An OTP for password reset has been sent to your email."
         }, status=status.HTTP_200_OK)
 
 
