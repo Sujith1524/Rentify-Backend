@@ -16,6 +16,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.http import urlsafe_base64_decode
+from .utils import validate_otp, clear_otp_from_cache
 
 
 # Import from enterprise structure
@@ -405,15 +406,14 @@ class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
     def validate_email(self, value):
+        # 1. Check for user existence
         try:
             user = User.objects.get(email=value)
         except User.DoesNotExist:
-            # Security Rule: Do not disclose if the email exists. 
-            # We return a success message regardless of existence.
-            # To be safe, we only proceed if the user exists.
             self.user = None
             return value
 
+        # 2. Block suspended/disabled accounts
         if user.status == 'suspended' or user.status == 'disabled':
              raise serializers.ValidationError("Account is suspended or deactivated. Cannot initiate password reset.")
 
@@ -422,48 +422,42 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
     def save(self, request):
         if self.user:
-            # 1. Generate the UID and Token
-            uid = urlsafe_base64_encode(force_bytes(self.user.pk))
-            token = default_token_generator.make_token(self.user)
-            
-            # 2. Construct the reset link (Frontend URL)
-            # CRITICAL: This base URL should come from your settings/frontend configuration.
-            # Example: http://frontend.com/reset-password/
-            current_site = request.META.get('HTTP_HOST') or 'localhost:8000' # Placeholder
-            
-            # This is the link the user receives via email:
-            reset_url = f"http://{current_site}/reset-password/?uid={uid}&token={token}"
-            
-            # 3. Send the email (using your existing email utility function)
-            # You need a function like send_password_reset_email(user, reset_url)
-            # For demonstration, let's assume a generic email utility exists
-            print(f"PASSWORD RESET LINK GENERATED for {self.user.email}: {reset_url}")
+            # CRITICAL FIX: Generate and send OTP for password reset purpose
+            generate_and_cache_otp(self.user.email, purpose='reset')
             
             # TODO: Implement actual email sending via Celery
-            # send_password_reset_email_task.delay(self.user.email, reset_url)
+            # send_password_reset_otp_task.delay(self.user.email)
             
         # Security Rule: Always return a generic success message
-        return {"message": "If an account with that email exists, a password reset link has been sent."}
+        return {"message": "If an account with that email exists, an OTP for password reset has been sent."}
     
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    uid = serializers.CharField(required=True)
-    token = serializers.CharField(required=True)
+    email = serializers.EmailField(required=True)
+    otp_code = serializers.CharField(required=True, max_length=6)
     new_password = serializers.CharField(required=True, write_only=True, min_length=8)
 
     def validate(self, data):
+        email = data['email']
+        new_password = data['new_password']
+        
+        # 1. Check user existence
         try:
-            # 1. Decode UID to get User ID
-            uid = urlsafe_base64_decode(data['uid']).decode()
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist, DjangoValidationError):
-            raise serializers.ValidationError({"uid": "Invalid reset link (UID)."})
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "Invalid email."})
         
-        # 2. Validate the Token
-        if not default_token_generator.check_token(user, data['token']):
-            # Edge Case 4: Block expired/previously consumed token
-            raise serializers.ValidationError({"token": "Invalid or expired token. Please request a new reset."})
-        
+        # 2. Validate the OTP
+        # CRITICAL FIX: Use the OTP validation utility
+        if not validate_otp(email, data['otp_code'], purpose='reset'):
+            # Rule 2: Deny expired/invalid OTP
+            raise serializers.ValidationError({"otp_code": "Invalid or expired OTP. Please request a new code."})
+            
+        # 3. Check if new password is the same as the old password
+        if user.check_password(new_password):
+            # NEW RULE: The user cannot use the existing password
+            raise serializers.ValidationError({"new_password": "This password is your current one. Please choose a new password."})
+
         self.user = user
         return data
 
@@ -472,12 +466,12 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         user = self.user
         new_password = self.validated_data['new_password']
         
-        # 1. Set the new password and save
+        # 1. Set the new password and update the invalidation timestamp
         user.set_password(new_password)
-        
-        # 2. CRITICAL FIX: Update the password_updated_at field
-        # This action automatically invalidates ALL tokens issued BEFORE this time.
         user.password_updated_at = timezone.now()
+        user.save(update_fields=['password', 'password_updated_at']) 
         
-        # Save both the new password hash and the new timestamp
-        user.save(update_fields=['password', 'password_updated_at'])
+        # 2. Clear the used OTP from cache (Rule 2)
+        clear_otp_from_cache(user.email, purpose='reset')
+        
+        return user
