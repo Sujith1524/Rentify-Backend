@@ -11,6 +11,11 @@ from rest_framework_simplejwt.tokens import RefreshToken # New Import for token 
 from apps.core.utils import check_otp, get_tokens_for_user
 from django.utils import timezone
 from .utils import save_kyc_draft, load_kyc_draft
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.http import urlsafe_base64_decode
 
 
 # Import from enterprise structure
@@ -394,3 +399,85 @@ class KYCReviewSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"User is not in a reviewable state. Current status: {user.status}")
             
         return value
+    
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        try:
+            user = User.objects.get(email=value)
+        except User.DoesNotExist:
+            # Security Rule: Do not disclose if the email exists. 
+            # We return a success message regardless of existence.
+            # To be safe, we only proceed if the user exists.
+            self.user = None
+            return value
+
+        if user.status == 'suspended' or user.status == 'disabled':
+             raise serializers.ValidationError("Account is suspended or deactivated. Cannot initiate password reset.")
+
+        self.user = user
+        return value
+
+    def save(self, request):
+        if self.user:
+            # 1. Generate the UID and Token
+            uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+            token = default_token_generator.make_token(self.user)
+            
+            # 2. Construct the reset link (Frontend URL)
+            # CRITICAL: This base URL should come from your settings/frontend configuration.
+            # Example: http://frontend.com/reset-password/
+            current_site = request.META.get('HTTP_HOST') or 'localhost:8000' # Placeholder
+            
+            # This is the link the user receives via email:
+            reset_url = f"http://{current_site}/reset-password/?uid={uid}&token={token}"
+            
+            # 3. Send the email (using your existing email utility function)
+            # You need a function like send_password_reset_email(user, reset_url)
+            # For demonstration, let's assume a generic email utility exists
+            print(f"PASSWORD RESET LINK GENERATED for {self.user.email}: {reset_url}")
+            
+            # TODO: Implement actual email sending via Celery
+            # send_password_reset_email_task.delay(self.user.email, reset_url)
+            
+        # Security Rule: Always return a generic success message
+        return {"message": "If an account with that email exists, a password reset link has been sent."}
+    
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, write_only=True, min_length=8)
+
+    def validate(self, data):
+        try:
+            # 1. Decode UID to get User ID
+            uid = urlsafe_base64_decode(data['uid']).decode()
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist, DjangoValidationError):
+            raise serializers.ValidationError({"uid": "Invalid reset link (UID)."})
+        
+        # 2. Validate the Token
+        if not default_token_generator.check_token(user, data['token']):
+            # Edge Case 4: Block expired/previously consumed token
+            raise serializers.ValidationError({"token": "Invalid or expired token. Please request a new reset."})
+        
+        self.user = user
+        return data
+
+    @transaction.atomic
+    def save(self, **kwargs):
+        user = self.user
+        new_password = self.validated_data['new_password']
+        
+        # 1. Set the new password and save
+        user.set_password(new_password)
+        
+        # 2. CRITICAL FIX: Update the password_updated_at field
+        # This action automatically invalidates ALL tokens issued BEFORE this time.
+        user.password_updated_at = timezone.now()
+        
+        # Save both the new password hash and the new timestamp
+        user.save(update_fields=['password', 'password_updated_at'])

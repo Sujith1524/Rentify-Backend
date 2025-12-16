@@ -2,8 +2,8 @@
 
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
-# REMOVE: from django.contrib.auth import get_user_model  <--- DELETE THIS
 from apps.core.models import BaseModel
+from django.utils import timezone
 
 
 # NOTE: Since we are defining the User model below, we can reference it directly.
@@ -59,6 +59,10 @@ class User(AbstractUser, BaseModel):
     
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='buyer')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    password_updated_at = models.DateTimeField(
+        default=timezone.now, 
+        help_text="Time of the last password update for JWT validation."
+    )
 
     # Django Custom User settings
     username = None 

@@ -8,6 +8,7 @@ from .utils import load_kyc_draft, clear_kyc_draft
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAdminUser
 from apps.users.permissions import IsVerifiedOrStaff
+from rest_framework import permissions
 from django.utils import timezone
 from .models import UserKYC
 from django.db import transaction 
@@ -19,7 +20,9 @@ from .serializers import (
     LoginOTPRequestSerializer,    
     LoginOTPVerificationSerializer,
     KYCDraftSerializer,
-    KYCReviewSerializer
+    KYCReviewSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer,
 )
 
 User = get_user_model()
@@ -273,4 +276,45 @@ class KYCReviewAPIView(generics.GenericAPIView):
             "message": message,
             "user_status": user.status,
             "kyc_updated": True
+        }, status=status.HTTP_200_OK)
+    
+
+class PasswordResetRequestAPIView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/password/reset/request/
+    Initiates password reset by sending a link to the user's email.
+    """
+    serializer_class = PasswordResetRequestSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=False) # Allow invalid email to pass validation silently
+
+        # Save handles validation and email sending
+        serializer.save(request=request)
+
+        # Security Rule: Always return 200 OK regardless of email existence
+        return Response({
+            "message": "If an account with that email exists, a password reset link has been sent."
+        }, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmAPIView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/password/reset/confirm/
+    Sets a new password using the UID and token from the email link.
+    """
+    serializer_class = PasswordResetConfirmSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Save updates the password and handles session invalidation
+        serializer.save()
+
+        return Response({
+            "message": "Password has been reset successfully. You can now log in with your new password."
         }, status=status.HTTP_200_OK)

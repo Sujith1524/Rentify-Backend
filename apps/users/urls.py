@@ -9,6 +9,8 @@ from .views import (
     KYCDraftLoadAPIView,
     KYCDraftSaveAPIView,
     KYCReviewAPIView,
+    PasswordResetRequestAPIView,
+    PasswordResetConfirmAPIView,
 )
 from rest_framework_simplejwt.views import TokenRefreshView 
 
@@ -31,4 +33,8 @@ urlpatterns = [
 
     # KYC ADMIN APPROVAL ENDPOINT
     path('admin/kyc-review/', KYCReviewAPIView.as_view(), name='admin-kyc-review'),
+
+    # PASSWORD RESET FLOW
+    path('password/reset/request/', PasswordResetRequestAPIView.as_view(), name='password-reset-request'),
+    path('password/reset/confirm/', PasswordResetConfirmAPIView.as_view(), name='password-reset-confirm'),
 ]
