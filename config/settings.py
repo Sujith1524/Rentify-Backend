@@ -182,6 +182,7 @@ REST_FRAMEWORK = {
 
 # --- Simple JWT Configuration (Matching your current token lifespan) ---
 SIMPLE_JWT = {
+    'ACCESS_TOKEN_CLASS': 'apps.users.tokens.PasswordUpdateCheckToken',
     # Keep access token valid for 20 minutes (1200 seconds) - current setting is 20 minutes
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=20),
     # Keep refresh token valid for 168 hours (7 day) - current setting is much longer, let's standardize
@@ -208,7 +209,6 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
     'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
 
-    'ACCESS_TOKEN_CLASS': 'apps.users.tokens.PasswordUpdateCheckToken',
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
     'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',

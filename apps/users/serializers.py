@@ -131,17 +131,17 @@ class OTPVerificationSerializer(serializers.Serializer):
 # --- 3. Login OTP Request Serializer (NEW for 2FA Login) ---
 class LoginOTPRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True)
+    # password = serializers.CharField(write_only=True)
 
     def validate(self, data):
         email = data.get('email')
-        password = data.get('password')
+        # password = data.get('password')
         
         user = User.objects.filter(email=email).first()
 
         # 1. Standard Authentication Check
-        if user is None or not user.check_password(password):
-            raise serializers.ValidationError({"detail": "Invalid credentials."})
+        # if user is None or not user.check_password(password):
+        #     raise serializers.ValidationError({"detail": "Invalid credentials."})
         
         # 2. CRITICAL FIX: Account Status Check
         # Define statuses that are allowed to log in. 
