@@ -6,6 +6,8 @@ import random
 import string
 from datetime import timedelta
 from django.conf import settings # Needed for OTP settings
+from django.conf import settings
+from django.core.cache import cache
 
 # --- OTP Configuration (Using settings) ---
 # Assuming you have SIMPLE_OTP settings in config/settings.py:
@@ -16,6 +18,9 @@ from django.conf import settings # Needed for OTP settings
 
 OTP_LENGTH = getattr(settings, 'SIMPLE_OTP', {}).get('LENGTH', 6)
 OTP_TIMEOUT = getattr(settings, 'SIMPLE_OTP', {}).get('TIMEOUT', 300) # 5 minutes
+
+# Load security constants
+LOCKOUT_SETTINGS = settings.SECURITY_LOCKOUT
 
 # --- 1. KYC Draft Utilities ---
 
@@ -98,4 +103,43 @@ def validate_otp(identifier, otp_code, purpose):
 def clear_otp_from_cache(identifier, purpose):
     """Removes the OTP from the cache immediately after successful use."""
     key = get_otp_key(identifier, purpose)
+    cache.delete(key)
+
+
+def get_failed_attempts_key(identifier):
+    """Generates the cache key for failed attempts."""
+    prefix = LOCKOUT_SETTINGS['CACHE_KEY_PREFIX']
+    return f"{prefix}{identifier}"
+
+def record_failed_attempt(identifier):
+    """
+    Records a failed login attempt for the given identifier (email).
+    Increments the counter and sets the expiration time.
+    """
+    key = get_failed_attempts_key(identifier)
+    
+    # Use cache.incr for atomic increment
+    try:
+        current_attempts = cache.incr(key)
+    except ValueError:
+        # If the key doesn't exist, set it to 1 with the full window timeout
+        current_attempts = 1
+        cache.set(key, current_attempts, timeout=LOCKOUT_SETTINGS['ATTEMPT_WINDOW'])
+        
+    return current_attempts
+
+def is_account_locked(identifier):
+    """
+    Checks if the account is currently locked due to too many failed attempts.
+    Returns True if locked, False otherwise.
+    """
+    key = get_failed_attempts_key(identifier)
+    current_attempts = cache.get(key, 0) # Default to 0 if key not found
+    max_attempts = LOCKOUT_SETTINGS['MAX_ATTEMPTS']
+    
+    return current_attempts >= max_attempts
+
+def clear_failed_attempts(identifier):
+    """Clears the failed attempt count after a successful login."""
+    key = get_failed_attempts_key(identifier)
     cache.delete(key)

@@ -17,6 +17,12 @@ from django.utils.http import urlsafe_base64_encode
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.http import urlsafe_base64_decode
 from .utils import validate_otp, clear_otp_from_cache
+from .utils import (
+    generate_and_cache_otp, 
+    record_failed_attempt,     
+    is_account_locked,          
+    clear_failed_attempts       
+)
 
 
 # Import from enterprise structure
@@ -129,35 +135,45 @@ class OTPVerificationSerializer(serializers.Serializer):
         }
     
 
-# --- 3. Login OTP Request Serializer (NEW for 2FA Login) ---
 class LoginOTPRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
-    # password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True)
 
     def validate(self, data):
         email = data.get('email')
-        # password = data.get('password')
+        password = data.get('password')
         
         user = User.objects.filter(email=email).first()
 
-        # 1. Standard Authentication Check
-        # if user is None or not user.check_password(password):
-        #     raise serializers.ValidationError({"detail": "Invalid credentials."})
+        # 1. CHECK FOR CURRENT LOCKOUT STATUS (CRITICAL)
+        if is_account_locked(email):
+            # Block login attempt immediately if locked (Edge Case 2)
+            raise serializers.ValidationError({"detail": "Too many failed login attempts. Account temporarily locked. Please try again later."})
         
-        # 2. CRITICAL FIX: Account Status Check
-        # Define statuses that are allowed to log in. 
-        # We explicitly allow all KYC-related states.
+        # 2. Check Authentication
+        if user is None or not user.check_password(password):
+            # Record failed attempt if user exists or if we want to track attempts by email (even non-existent ones)
+            record_failed_attempt(email) 
+            
+            # Check for lockout immediately after failure to inform the user
+            if is_account_locked(email):
+                # Return the locked message immediately
+                raise serializers.ValidationError({"detail": "Too many failed attempts. Account temporarily locked. Please try again later."})
+            
+            # If not locked, return generic invalid credentials message (Rule 1)
+            raise serializers.ValidationError({"detail": "Invalid credentials."})
+        
+        # 3. Successful Login (Clear Attempts)
+        clear_failed_attempts(email) # Clear counter upon successful authentication
+
+        # 4. Account Status Check (Existing Logic)
         ALLOWED_LOGIN_STATUSES = ['active', 'pending_kyc', 'rejected', 'verified']
-        
         if user.status not in ALLOWED_LOGIN_STATUSES:
-            # This catch-all handles any custom disabling statuses (e.g., 'suspended', 'banned')
             raise serializers.ValidationError({"detail": f"Account status is '{user.status}'. Access to login is currently restricted."})
             
-        # 3. User validated. Generate and send a new OTP for this session.
-        # This function should be imported from your utils or tasks
+        # 5. Generate OTP
         generate_and_cache_otp(user.email, purpose='login')
         
-        # 4. Store the user object
         data['user'] = user
         return data
 

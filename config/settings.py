@@ -273,3 +273,11 @@ CLOUDINARY_STORAGE = {
 # 3. CRITICAL: Tell Django to use Cloudinary for all media files (user uploads)
 MEDIA_URL = '/media/'
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+# --- BRUTE FORCE PROTECTION SETTINGS ---
+SECURITY_LOCKOUT = {
+    'MAX_ATTEMPTS': 5,          # Max failed attempts before lockout
+    'LOCKOUT_TIME': 900,        # Lockout duration in seconds (15 minutes)
+    'ATTEMPT_WINDOW': 600,      # Time window to count attempts in seconds (10 minutes)
+    'CACHE_KEY_PREFIX': 'login_fail:'
+}
