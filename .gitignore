@@ -17,9 +17,8 @@ staticfiles/
 .DS_Store
 Thumbs.db
 
-# Text Files
-**/.CompletedUserStoryDetails.txt
-**/.CompletedUserStoryDetails.txt
-.CompletedUserStoryDetails.txt
+# Text / Local status files (any variation)
+*CompletedUserStory*.txt
 
-
+# Text / Local status files
+CompletedUserStoryDetails.txt
