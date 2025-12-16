@@ -2,7 +2,7 @@
 
 from django.db import models
 from django.conf import settings
-from apps.core.models import BaseModel # Import your BaseModel
+from apps.core.models import BaseModel
 
 # Constants for choices
 PROPERTY_TYPE_CHOICES = [
@@ -51,9 +51,6 @@ class Property(BaseModel):
     bathrooms = models.PositiveSmallIntegerField(default=1)
     area_sqft = models.PositiveIntegerField(help_text="Total area in square feet.")
     
-    # --- Timestamps via BaseModel ---
-    # created_at, updated_at are inherited from BaseModel
-
     def __str__(self):
         return f"{self.title} ({self.city}) - {self.transaction_type}"
 
@@ -65,18 +62,19 @@ class Property(BaseModel):
 class PropertyImage(BaseModel):
     """
     Model for storing multiple images associated with a Property.
-    Images will be stored on Cloudinary via DEFAULT_FILE_STORAGE.
+    Stores the external Cloudinary URL.
     """
     property = models.ForeignKey(
         Property,
         on_delete=models.CASCADE,
         related_name='images'
     )
-    image = models.ImageField(
-        upload_to='property_images/%Y/%m/', # Folder structure on Cloudinary
-        help_text="Image file for the property."
-    )
+    # CRITICAL FIX: Use URLField to store the Cloudinary link string
+    image_url = models.URLField(
+        max_length=500, 
+        help_text="The external Cloudinary URL for the image."
+    ) 
     is_main = models.BooleanField(default=False)
     
     def __str__(self):
-        return f"Image for {self.property.title}"
+        return f"Image URL for {self.property.title}"

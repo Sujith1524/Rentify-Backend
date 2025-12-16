@@ -18,4 +18,5 @@ staticfiles/
 Thumbs.db
 
 # Text Files
-.CompletedUserStoryDetails.txt
+**/.CompletedUserStoryDetails.txt
+

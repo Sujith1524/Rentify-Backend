@@ -11,3 +11,9 @@ Rentify
 ✅ Post-Reset Session Termination (High Security)
 
 ✅ Explicit Logout/Token Blacklisting
+
+✅ Create (C): Verified users can create listings via JSON, passing Cloudinary URLs.
+
+✅ Read (R) / List: Public can view approved and active listings.
+
+✅ Retrieve, Update, Delete (RUD): Owner/Admin only access, using secure UUIDs, and customized 200 OK deletion feedback.
