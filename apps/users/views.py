@@ -412,38 +412,54 @@ class VerifySensitiveChangeAPIView(APIView):
     def post(self, request):
         otp_input = request.data.get('otp')
         try:
+            # Check for a pending request for the authenticated user
             pending = PendingSensitiveChange.objects.get(user=request.user)
         except PendingSensitiveChange.DoesNotExist:
             return Response({"error": "No pending update found."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Requirement 1: Validate OTP and Expiry
         if not pending.is_valid() or pending.otp != otp_input:
             return Response({"error": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
         device_ip = get_client_ip(request)
+        changed_fields = []
 
-        # Apply Email Update
+        # 1. Handle Email Update
         if pending.new_email:
+            # Requirement 5: Store historical metadata
             ProfileAuditLog.objects.create(
-                user=user, field_name="email", 
-                old_value=user.email, new_value=pending.new_email,
-                device_identifier=device_ip, action_by=user
+                user=user, 
+                field_name="email", 
+                old_value=user.email, 
+                new_value=pending.new_email,
+                device_identifier=device_ip, 
+                action_by=user
             )
             user.email = pending.new_email
+            changed_fields.append('email')
         
-        # Apply Mobile Update (Safely handle attribute names)
+        # 2. Handle Phone Update (Targeting your specific 'phone' field)
         if pending.new_mobile:
-            # Check if your model uses 'mobile' or 'phone_number'
-            mobile_field = 'mobile' if hasattr(user, 'mobile') else 'phone_number'
-            old_mobile = getattr(user, mobile_field, "None")
-            
+            # Requirement 5: Record old and new values
             ProfileAuditLog.objects.create(
-                user=user, field_name=mobile_field, 
-                old_value=str(old_mobile), new_value=pending.new_mobile,
-                device_identifier=device_ip, action_by=user
+                user=user, 
+                field_name="phone", 
+                old_value=str(user.phone), 
+                new_value=pending.new_mobile,
+                device_identifier=device_ip, 
+                action_by=user
             )
-            setattr(user, mobile_field, pending.new_mobile)
+            
+            # Explicitly update the field from your User model
+            user.phone = pending.new_mobile
+            changed_fields.append('phone')
 
-        user.save()
+        # Requirement 4: Atomic update
+        if changed_fields:
+            user.save(update_fields=changed_fields)
+        
+        # Requirement 3: Cleanup pending records after successful update
         pending.delete()
-        return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
+        
+        return Response({"message": "Profile contact information updated successfully."}, status=status.HTTP_200_OK)
