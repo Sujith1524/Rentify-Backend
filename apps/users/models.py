@@ -4,6 +4,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from apps.core.models import BaseModel
 from django.utils import timezone
+from django.conf import settings
 
 
 # NOTE: Since we are defining the User model below, we can reference it directly.
@@ -115,3 +116,48 @@ class UserKYC(BaseModel):
         
     def __str__(self):
         return f"{self.user.email} - {self.kyc_type} - {self.status}"
+    
+
+class Profile(BaseModel):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='profile'
+    )
+    
+    # --- Profile Details ---
+    profile_photo = models.URLField(max_length=500, blank=True, null=True)
+    alternate_mobile = models.CharField(max_length=15, blank=True, null=True)
+    bio = models.TextField(max_length=500, blank=True)
+    
+    # --- Communication Preferences ---
+    pref_email_notifications = models.BooleanField(default=True)
+    pref_sms_notifications = models.BooleanField(default=True)
+    pref_push_notifications = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Profile for {self.user.email}"
+
+class ProfileAuditLog(BaseModel):
+    """
+    Requirement 5: Audit Logging and Recovery.
+    Tracks every change made to a user's profile.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='audit_logs'
+    )
+    field_name = models.CharField(max_length=100)
+    old_value = models.TextField(null=True, blank=True)
+    new_value = models.TextField(null=True, blank=True)
+    device_identifier = models.CharField(max_length=255, blank=True, null=True)
+    action_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='actions_performed'
+    )
+
+    class Meta:
+        ordering = ['-created_at']

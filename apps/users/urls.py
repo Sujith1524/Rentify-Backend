@@ -12,6 +12,7 @@ from .views import (
     PasswordResetRequestAPIView,
     PasswordResetConfirmAPIView,
     LogoutAPIView,
+    UserProfileAPIView,
 )
 from rest_framework_simplejwt.views import TokenRefreshView 
 
@@ -41,4 +42,7 @@ urlpatterns = [
 
     # Explicit Logout (Means the user try to logout the refresh token also get blacklist)
     path('logout/', LogoutAPIView.as_view(), name='logout'), 
+
+    # PROFILE MANAGEMENT
+    path('profile/', UserProfileAPIView.as_view(), name='user-profile'),
 ]

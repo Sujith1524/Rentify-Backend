@@ -7,6 +7,7 @@ from django.core.cache import cache
 from django.core.validators import validate_email # For email format validation
 from django.db import transaction # New Import for atomic DB operations
 from rest_framework_simplejwt.tokens import RefreshToken # New Import for token generation
+from .models import Profile, ProfileAuditLog
 from apps.core.utils import check_otp, get_tokens_for_user
 from django.utils import timezone
 from .utils import save_kyc_draft, load_kyc_draft
@@ -518,3 +519,54 @@ class LogoutSerializer(serializers.Serializer):
         except Exception as e:
             # General error handling
             raise serializers.ValidationError({"detail": "Error during token invalidation."})
+        
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    # Flatten fields from the User model for a better API experience
+    first_name = serializers.CharField(source='user.first_name')
+    last_name = serializers.CharField(source='user.last_name')
+    email = serializers.EmailField(source='user.email', read_only=True) # Requirement 1: Verification needed for change
+    mobile = serializers.CharField(source='user.mobile', read_only=True) # Requirement 1: OTP needed for change
+    
+    # Nested KYC info (Read-Only)
+    kyc_status = serializers.CharField(source='user.kyc_details.status', read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = [
+            'first_name', 'last_name', 'email', 'mobile', 'profile_photo', 
+            'alternate_mobile', 'bio', 'pref_email_notifications', 
+            'pref_sms_notifications', 'pref_push_notifications', 'kyc_status'
+        ]
+
+    def validate_first_name(self, value):
+        if not value.isalpha():
+            raise serializers.ValidationError("Name must contain only alphabetical characters.")
+        return value
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', {})
+        user = instance.user
+
+        # Requirement 5: Audit Logging Logic
+        for attr, value in validated_data.items():
+            old_val = getattr(instance, attr)
+            if old_val != value:
+                ProfileAuditLog.objects.create(
+                    user=user,
+                    field_name=attr,
+                    old_value=str(old_val),
+                    new_value=str(value),
+                    action_by=user
+                )
+                setattr(instance, attr, value)
+
+        # Update core User fields
+        if user_data:
+            for attr, value in user_data.items():
+                setattr(user, attr, value)
+            user.save()
+
+        instance.save()
+        return instance

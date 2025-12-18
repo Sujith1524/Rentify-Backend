@@ -9,6 +9,8 @@ from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAdminUser
 from apps.users.permissions import IsVerifiedOrStaff
 from rest_framework import permissions
+from .models import Profile
+from .serializers import ProfileSerializer
 from django.utils import timezone
 from .models import UserKYC
 from django.db import transaction 
@@ -344,3 +346,17 @@ class LogoutAPIView(generics.GenericAPIView):
         # Rule 3: Return a success message indicating session termination
         return Response({"message": "Successfully logged out. Your session has been terminated."}, 
                         status=status.HTTP_200_OK)
+    
+
+class UserProfileAPIView(generics.RetrieveUpdateAPIView):
+    """
+    GET: View own profile details.
+    PATCH: Update personal information and preferences.
+    """
+    serializer_class = ProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        # Requirement 4: Atomic and specific to the authenticated user
+        profile, created = Profile.objects.get_or_create(user=self.request.user)
+        return profile
