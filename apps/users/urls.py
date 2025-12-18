@@ -1,4 +1,5 @@
 from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView 
 from .views import (
     RegisterAPIView, 
     OTPVerifyAPIView, 
@@ -13,10 +14,9 @@ from .views import (
     PasswordResetConfirmAPIView,
     LogoutAPIView,
     UserProfileAPIView,
-    RequestEmailChangeAPIView,
-    VerifyEmailChangeAPIView,
+    RequestSensitiveChangeAPIView,
+    VerifySensitiveChangeAPIView,
 )
-from rest_framework_simplejwt.views import TokenRefreshView 
 
 urlpatterns = [
 
@@ -48,7 +48,7 @@ urlpatterns = [
     # PROFILE MANAGEMENT [ GET & POST]
     path('profile/', UserProfileAPIView.as_view(), name='user-profile'),
 
-    # PROFILE UPDATION REQUEST OTP SENDING AND VERIFY
-    path('profile/email-change-request/', RequestEmailChangeAPIView.as_view(), name='email-change-request'),
-    path('profile/email-change-verify/', VerifyEmailChangeAPIView.as_view(), name='email-change-verify'),
+    # # PROFILE UPDATION REQUEST OTP SENDING AND VERIFY
+    path('profile/sensitive-update-request/', RequestSensitiveChangeAPIView.as_view(), name='sensitive-update-request'),
+    path('profile/sensitive-update-verify/', VerifySensitiveChangeAPIView.as_view(), name='sensitive-update-verify'),
 ]

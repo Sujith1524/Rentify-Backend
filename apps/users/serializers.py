@@ -13,12 +13,13 @@ from django.utils import timezone
 from .utils import save_kyc_draft, load_kyc_draft
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from .utils import validate_otp, clear_otp_from_cache
 from .utils import (
     generate_and_cache_otp, 
     record_failed_attempt,     
     is_account_locked,          
-    clear_failed_attempts       
+    clear_failed_attempts,
+    validate_otp, 
+    clear_otp_from_cache,
 )
 
 
@@ -600,14 +601,19 @@ class ProfileSerializer(serializers.ModelSerializer):
         return instance
     
 
-class EmailChangeRequestSerializer(serializers.Serializer):
-    new_email = serializers.EmailField()
+    
+class SensitiveChangeRequestSerializer(serializers.Serializer):
+    new_email = serializers.EmailField(required=False)
+    new_mobile = serializers.CharField(required=False)
 
-    def validate_new_email(self, value):
-        from apps.users.models import User
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("This email is already associated with another account.")
-        return value
-
-class EmailChangeVerifySerializer(serializers.Serializer):
-    otp = serializers.CharField(max_length=6, min_length=6)
+    def validate(self, data):
+        if not data.get('new_email') and not data.get('new_mobile'):
+            raise serializers.ValidationError("Provide at least a new email or a new mobile number.")
+        
+        # Check if email is already taken
+        if data.get('new_email'):
+            from apps.users.models import User
+            if User.objects.filter(email=data['new_email']).exists():
+                raise serializers.ValidationError({"new_email": "This email is already in use."})
+        
+        return data

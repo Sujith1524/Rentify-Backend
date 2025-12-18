@@ -159,7 +159,10 @@ CELERY_TIMEZONE = 'Asia/Kolkata' # Adjust as needed
 
 
 # --- Email Configuration for Real OTP Sending ---
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+# Use this for local development to get 0.1s response times
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com' # Replace with your provider's host
 EMAIL_PORT = 587             # Standard TLS port
 EMAIL_USE_TLS = True         # Required for secure connections

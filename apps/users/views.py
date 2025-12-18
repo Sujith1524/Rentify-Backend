@@ -1,6 +1,7 @@
 # apps/users/views.py
 
 import random
+import threading
 from django.conf import settings
 from django.core.mail import send_mail
 from rest_framework.views import APIView
@@ -13,10 +14,10 @@ from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAdminUser
 from apps.users.permissions import IsVerifiedOrStaff
 from rest_framework import permissions
-from .models import Profile
+from .models import Profile, PendingSensitiveChange
 from .serializers import ProfileSerializer
 from django.utils import timezone
-from .models import UserKYC, PendingEmailChange, ProfileAuditLog
+from .models import UserKYC, ProfileAuditLog
 from django.db import transaction 
 from .serializers import ( 
     UserRegistrationSerializer, 
@@ -30,8 +31,7 @@ from .serializers import (
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
     LogoutSerializer,
-    EmailChangeRequestSerializer,
-    EmailChangeVerifySerializer
+    SensitiveChangeRequestSerializer,
 )
 
 User = get_user_model()
@@ -368,68 +368,82 @@ class UserProfileAPIView(generics.RetrieveUpdateAPIView):
         return profile
     
 
-class RequestEmailChangeAPIView(APIView):
+
+def get_client_ip(request):
+    """Utility to get user IP for audit logs."""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    return x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
+
+class RequestSensitiveChangeAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = EmailChangeRequestSerializer(data=request.data)
+        serializer = SensitiveChangeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        new_email = serializer.validated_data['new_email']
         
-        # 1. Generate 6-digit OTP
         otp = f"{random.randint(100000, 999999)}"
         
-        # 2. Save to Pending table (Update if exists, else create)
-        PendingEmailChange.objects.update_or_create(
+        PendingSensitiveChange.objects.update_or_create(
             user=request.user,
-            defaults={'new_email': new_email, 'otp': otp}
+            defaults={
+                'new_email': serializer.validated_data.get('new_email'),
+                'new_mobile': serializer.validated_data.get('new_mobile'),
+                'otp': otp
+            }
         )
         
-        # 3. Send Email to the NEW email address
-        send_mail(
-            subject="Verify your new email address",
-            message=f"Your OTP for changing your email to {new_email} is: {otp}. It expires in 15 minutes.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[new_email],
-        )
+        # FIX: Background threading to eliminate the 25s delay
+        def send_otp():
+            send_mail(
+                subject="Security Verification: Account Update",
+                message=f"Your OTP is: {otp}. This expires in 15 minutes.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[request.user.email],
+                fail_silently=False,
+            )
         
-        return Response({"message": f"OTP sent to {new_email}. Please verify to complete the change."}, status=status.HTTP_200_OK)
+        threading.Thread(target=send_otp).start()
+        
+        return Response({"message": "OTP sent to your registered email address."}, status=status.HTTP_200_OK)
 
-class VerifyEmailChangeAPIView(APIView):
+class VerifySensitiveChangeAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = EmailChangeVerifySerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        otp_input = serializer.validated_data['otp']
-        
+        otp_input = request.data.get('otp')
         try:
-            pending = PendingEmailChange.objects.get(user=request.user)
-        except PendingEmailChange.DoesNotExist:
-            return Response({"error": "No pending email change found."}, status=status.HTTP_400_BAD_REQUEST)
+            pending = PendingSensitiveChange.objects.get(user=request.user)
+        except PendingSensitiveChange.DoesNotExist:
+            return Response({"error": "No pending update found."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check validity
-        if not pending.is_valid():
-            pending.delete()
-            return Response({"error": "OTP expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
+        if not pending.is_valid() or pending.otp != otp_input:
+            return Response({"error": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if pending.otp != otp_input:
-            return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # SUCCESS: Update the main User model
         user = request.user
-        old_email = user.email
-        user.email = pending.new_email
+        device_ip = get_client_ip(request)
+
+        # Apply Email Update
+        if pending.new_email:
+            ProfileAuditLog.objects.create(
+                user=user, field_name="email", 
+                old_value=user.email, new_value=pending.new_email,
+                device_identifier=device_ip, action_by=user
+            )
+            user.email = pending.new_email
+        
+        # Apply Mobile Update (Safely handle attribute names)
+        if pending.new_mobile:
+            # Check if your model uses 'mobile' or 'phone_number'
+            mobile_field = 'mobile' if hasattr(user, 'mobile') else 'phone_number'
+            old_mobile = getattr(user, mobile_field, "None")
+            
+            ProfileAuditLog.objects.create(
+                user=user, field_name=mobile_field, 
+                old_value=str(old_mobile), new_value=pending.new_mobile,
+                device_identifier=device_ip, action_by=user
+            )
+            setattr(user, mobile_field, pending.new_mobile)
+
         user.save()
-        
-        # Create Audit Log
-        ProfileAuditLog.objects.create(
-            user=user,
-            field_name="email",
-            old_value=old_email,
-            new_value=user.email,
-            action_by=user
-        )
-        
-        pending.delete() # Clear the pending request
-        return Response({"message": "Email updated successfully."}, status=status.HTTP_200_OK)
+        pending.delete()
+        return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
