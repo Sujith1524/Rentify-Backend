@@ -524,61 +524,60 @@ class LogoutSerializer(serializers.Serializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
-    # Flatten fields from the User model for a better API experience
+    # Flatten fields from your Custom User model
     first_name = serializers.CharField(source='user.first_name')
     last_name = serializers.CharField(source='user.last_name')
-    email = serializers.EmailField(source='user.email', read_only=True) # Requirement 1: Verification needed for change
-    mobile = serializers.CharField(source='user.mobile', read_only=True) # Requirement 1: OTP needed for change
     
-    # Nested KYC info (Read-Only)
-    kyc_status = serializers.CharField(source='user.kyc_details.status', read_only=True)
+    # Use 'phone' to match your User model definition
+    email = serializers.EmailField(source='user.email', read_only=True) 
+    phone = serializers.CharField(source='user.phone', read_only=True) 
+    
+    # Requirement 1: KYC status from User.status field
+    kyc_status = serializers.CharField(source='user.status', read_only=True)
 
     class Meta:
         model = Profile
         fields = [
-            'first_name', 'last_name', 'email', 'mobile', 'profile_photo', 
+            'first_name', 'last_name', 'email', 'phone', 'profile_photo', 
             'alternate_mobile', 'bio', 'pref_email_notifications', 
             'pref_sms_notifications', 'pref_push_notifications', 'kyc_status'
         ]
 
     def validate_first_name(self, value):
-        if not value.isalpha():
+        # Requirement 2: Name character-formatting rules
+        if not value.replace(' ', '').isalpha():
             raise serializers.ValidationError("Name must contain only alphabetical characters.")
         return value
-    
-    # In your ProfileSerializer update method or View
-    def get_client_ip(request):
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
-    
+
+    def validate_profile_photo(self, value):
+        # Requirement 3: Photo data integrity and format
+        if value and "cloudinary.com" not in value:
+            raise serializers.ValidationError("Only Cloudinary hosted images are accepted.")
+        return value
+
     def validate(self, data):
+        """
+        Requirement 1: Restricted fields (Name) must not be editable after KYC verification.
+        """
         user = self.instance.user
-        # Check if user has KYC details and if they are verified
-        if hasattr(user, 'kyc_details') and user.kyc_details.status == 'verified':
-            # Fields that should be locked after verification
+        
+        # Check against your User model's 'status' field
+        if user.status == 'verified':
+            user_data = data.get('user', {})
             restricted_fields = ['first_name', 'last_name'] 
             
             for field in restricted_fields:
-                if field in data.get('user', {}):
+                if field in user_data:
                     raise serializers.ValidationError({
                         field: f"Cannot update {field} because your account is already KYC verified."
                     })
         return data
-    
-    def validate_profile_photo(self, value):
-        if value and "cloudinary.com" not in value:
-            raise serializers.ValidationError("Only Cloudinary hosted images are accepted.")
-        return value
 
     def update(self, instance, validated_data):
         user_data = validated_data.pop('user', {})
         user = instance.user
 
-        # Requirement 5: Audit Logging Logic
+        # Requirement 5: Audit Logging for Profile fields
         for attr, value in validated_data.items():
             old_val = getattr(instance, attr)
             if old_val != value:
@@ -591,10 +590,20 @@ class ProfileSerializer(serializers.ModelSerializer):
                 )
                 setattr(instance, attr, value)
 
-        # Update core User fields
+        # Update core User fields (first_name, last_name)
         if user_data:
             for attr, value in user_data.items():
-                setattr(user, attr, value)
+                old_val = getattr(user, attr)
+                if old_val != value:
+                    # Requirement 5: Audit Logging for User identity fields
+                    ProfileAuditLog.objects.create(
+                        user=user,
+                        field_name=attr,
+                        old_value=str(old_val),
+                        new_value=str(value),
+                        action_by=user
+                    )
+                    setattr(user, attr, value)
             user.save()
 
         instance.save()
