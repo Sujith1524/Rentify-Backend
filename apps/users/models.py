@@ -161,3 +161,20 @@ class ProfileAuditLog(BaseModel):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class PendingEmailChange(BaseModel):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='pending_email'
+    )
+    new_email = models.EmailField()
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_valid(self):
+        # OTP is valid for 15 minutes
+        from django.utils import timezone
+        import datetime
+        return self.created_at >= timezone.now() - datetime.timedelta(minutes=15)

@@ -13,6 +13,8 @@ from .views import (
     PasswordResetConfirmAPIView,
     LogoutAPIView,
     UserProfileAPIView,
+    RequestEmailChangeAPIView,
+    VerifyEmailChangeAPIView,
 )
 from rest_framework_simplejwt.views import TokenRefreshView 
 
@@ -43,6 +45,10 @@ urlpatterns = [
     # Explicit Logout (Means the user try to logout the refresh token also get blacklist)
     path('logout/', LogoutAPIView.as_view(), name='logout'), 
 
-    # PROFILE MANAGEMENT
+    # PROFILE MANAGEMENT [ GET & POST]
     path('profile/', UserProfileAPIView.as_view(), name='user-profile'),
+
+    # PROFILE UPDATION REQUEST OTP SENDING AND VERIFY
+    path('profile/email-change-request/', RequestEmailChangeAPIView.as_view(), name='email-change-request'),
+    path('profile/email-change-verify/', VerifyEmailChangeAPIView.as_view(), name='email-change-verify'),
 ]

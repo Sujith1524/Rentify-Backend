@@ -544,6 +544,34 @@ class ProfileSerializer(serializers.ModelSerializer):
         if not value.isalpha():
             raise serializers.ValidationError("Name must contain only alphabetical characters.")
         return value
+    
+    # In your ProfileSerializer update method or View
+    def get_client_ip(request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+    
+    def validate(self, data):
+        user = self.instance.user
+        # Check if user has KYC details and if they are verified
+        if hasattr(user, 'kyc_details') and user.kyc_details.status == 'verified':
+            # Fields that should be locked after verification
+            restricted_fields = ['first_name', 'last_name'] 
+            
+            for field in restricted_fields:
+                if field in data.get('user', {}):
+                    raise serializers.ValidationError({
+                        field: f"Cannot update {field} because your account is already KYC verified."
+                    })
+        return data
+    
+    def validate_profile_photo(self, value):
+        if value and "cloudinary.com" not in value:
+            raise serializers.ValidationError("Only Cloudinary hosted images are accepted.")
+        return value
 
     def update(self, instance, validated_data):
         user_data = validated_data.pop('user', {})
@@ -570,3 +598,16 @@ class ProfileSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
+    
+
+class EmailChangeRequestSerializer(serializers.Serializer):
+    new_email = serializers.EmailField()
+
+    def validate_new_email(self, value):
+        from apps.users.models import User
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("This email is already associated with another account.")
+        return value
+
+class EmailChangeVerifySerializer(serializers.Serializer):
+    otp = serializers.CharField(max_length=6, min_length=6)
