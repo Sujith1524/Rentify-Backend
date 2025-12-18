@@ -1,0 +1,20 @@
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #eee; padding: 20px;">
+    <h2 style="color: #2D3E50;">Secure Login Verification</h2>
+    <p>A login attempt was made for your {{ company_name }} account. Please enter the code below to authorize this session:</p>
+    
+    <div style="background-color: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; text-align: center; margin: 25px 0;">
+        <span style="font-size: 36px; font-weight: bold; color: #856404;">{{ otp }}</span>
+    </div>
+
+    <p style="font-size: 14px;"><b>Details:</b><br>
+    Action: Account Login (2FA)<br>
+    Time: {{ timestamp }}</p>
+
+    <div style="background-color: #f8d7da; padding: 10px; border-radius: 5px; font-size: 13px; color: #721c24;">
+        <b>Not you?</b> If you didn't try to log in, someone else may have your password. Please reset your password immediately.
+    </div>
+
+    <p style="font-size: 12px; color: #888; margin-top: 30px; text-align: center;">
+        &copy; 2025 {{ company_name }} Security Operations Center
+    </p>
+</div>

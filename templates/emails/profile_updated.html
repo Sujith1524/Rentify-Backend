@@ -1,0 +1,33 @@
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #eee; border-top: 4px solid #dc3545; padding: 20px;">
+    <h2 style="color: #2D3E50;">Security Alert: Profile Updated</h2>
+    <p>Hello {{ name }},</p>
+    <p>This is a confirmation that your account's contact information was recently changed.</p>
+    
+    <div style="background-color: #f8f9fa; border-radius: 5px; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0; font-weight: bold; color: #555;">Changes made to:</p>
+        <ul style="margin: 10px 0; color: #333;">
+            {% for field in updates %}
+                <li style="margin-bottom: 5px;">{{ field }}</li>
+            {% endfor %}
+        </ul>
+        <p style="margin: 0; font-size: 13px; color: #777;">🕒 <b>Date & Time:</b> {{ timestamp }}</p>
+    </div>
+
+    <p style="font-size: 14px; color: #333;"><b>If you made this change:</b><br>
+    You can safely ignore this email. No further action is required.</p>
+
+    <div style="background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 5px; color: #856404; font-size: 14px;">
+        <strong>Not you?</strong> If you did not authorize this change, your account may be compromised. Please:
+        <ul style="margin-top: 10px;">
+            <li>Change your account password immediately.</li>
+            <li>Contact Rentify Support ({{ support_email }}).</li>
+            <li>Review your recent account activity.</li>
+        </ul>
+    </div>
+
+    <hr style="border: none; border-top: 1px solid #eee; margin: 25px 0;">
+    <p style="font-size: 12px; color: #888; text-align: center;">
+        This is an automated security notification from {{ company_name }}.<br>
+        Please do not reply to this email.
+    </p>
+</div>

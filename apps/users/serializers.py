@@ -13,6 +13,8 @@ from django.utils import timezone
 from .utils import save_kyc_draft, load_kyc_draft
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from apps.core.notifications import NotificationService
+from django.utils import timezone
 from .utils import (
     generate_and_cache_otp, 
     record_failed_attempt,     
@@ -143,34 +145,39 @@ class LoginOTPRequestSerializer(serializers.Serializer):
         
         user = User.objects.filter(email=email).first()
 
-        # 1. CHECK FOR CURRENT LOCKOUT STATUS (CRITICAL)
+        # 1. Lockout Check
         if is_account_locked(email):
-            # Block login attempt immediately if locked (Edge Case 2)
-            raise serializers.ValidationError({"detail": "Too many failed login attempts. Account temporarily locked. Please try again later."})
+            raise serializers.ValidationError({"detail": "Too many failed login attempts. Account temporarily locked."})
         
-        # 2. Check Authentication
+        # 2. Authentication Check
         if user is None or not user.check_password(password):
-            # Record failed attempt if user exists or if we want to track attempts by email (even non-existent ones)
             record_failed_attempt(email) 
-            
-            # Check for lockout immediately after failure to inform the user
             if is_account_locked(email):
-                # Return the locked message immediately
-                raise serializers.ValidationError({"detail": "Too many failed attempts. Account temporarily locked. Please try again later."})
-            
-            # If not locked, return generic invalid credentials message (Rule 1)
+                raise serializers.ValidationError({"detail": "Too many failed attempts. Account temporarily locked."})
             raise serializers.ValidationError({"detail": "Invalid credentials."})
         
-        # 3. Successful Login (Clear Attempts)
-        clear_failed_attempts(email) # Clear counter upon successful authentication
+        # 3. Successful Auth - Clear attempts
+        clear_failed_attempts(email) 
 
-        # 4. Account Status Check (Existing Logic)
+        # 4. Status Check
         ALLOWED_LOGIN_STATUSES = ['active', 'pending_kyc', 'rejected', 'verified']
         if user.status not in ALLOWED_LOGIN_STATUSES:
-            raise serializers.ValidationError({"detail": f"Account status is '{user.status}'. Access to login is currently restricted."})
+            raise serializers.ValidationError({"detail": f"Account status is '{user.status}'. Restricted."})
             
         # 5. Generate OTP
-        generate_and_cache_otp(user.email, purpose='login')
+        otp_code = generate_and_cache_otp(user.email, purpose='login')
+
+        # 6. TRIGGER NOTIFICATION HERE (Safe, no KeyError)
+        otp_code = generate_and_cache_otp(user.email, purpose='login')
+        NotificationService.send_html_email(
+            user_email=user.email,
+            subject="Your Rentify Secure Login Code",
+            template_name="login_otp",
+            context={
+                'otp': otp_code,
+                'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')
+            }
+        )
         
         data['user'] = user
         return data
@@ -616,13 +623,29 @@ class SensitiveChangeRequestSerializer(serializers.Serializer):
     new_mobile = serializers.CharField(required=False)
 
     def validate(self, data):
-        if not data.get('new_email') and not data.get('new_mobile'):
-            raise serializers.ValidationError("Provide at least a new email or a new mobile number.")
+        new_email = data.get('new_email')
+        new_mobile = data.get('new_mobile')
         
-        # Check if email is already taken
-        if data.get('new_email'):
-            from apps.users.models import User
-            if User.objects.filter(email=data['new_email']).exists():
+        # Get the user safely from context
+        request = self.context.get('request')
+        user_id = request.user.id if request and request.user else None
+
+        from apps.users.models import User
+
+        if new_email:
+            # Check if email exists and belongs to SOMEONE ELSE
+            query = User.objects.filter(email=new_email)
+            if user_id:
+                query = query.exclude(id=user_id)
+            if query.exists():
                 raise serializers.ValidationError({"new_email": "This email is already in use."})
-        
+
+        if new_mobile:
+            # Check if phone exists and belongs to SOMEONE ELSE
+            query = User.objects.filter(phone=new_mobile)
+            if user_id:
+                query = query.exclude(id=user_id)
+            if query.exists():
+                raise serializers.ValidationError({"new_mobile": "This phone number is already in use."})
+
         return data

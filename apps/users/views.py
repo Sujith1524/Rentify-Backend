@@ -19,6 +19,9 @@ from .serializers import ProfileSerializer
 from django.utils import timezone
 from .models import UserKYC, ProfileAuditLog
 from django.db import transaction 
+from django.db import IntegrityError
+from apps.core.notifications import NotificationService
+from django.utils import timezone
 from .serializers import ( 
     UserRegistrationSerializer, 
     OTPVerificationSerializer, 
@@ -41,10 +44,6 @@ User = get_user_model()
 
 # --- 1. Registration (Pre-DB Save) ---
 class RegisterAPIView(generics.CreateAPIView):
-    """
-    POST /api/v1/auth/register/
-    Stores data in cache and sends OTP, does NOT save to database yet.
-    """
     serializer_class = UserRegistrationSerializer
     permission_classes = [] 
 
@@ -52,13 +51,25 @@ class RegisterAPIView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # CRITICAL CHANGE: Call save, which stores data in cache and sends OTP
+        # result contains {'email': email, 'otp_code': otp_code}
         result = serializer.save() 
         
+        # FIX: Define the email variable from the result dictionary
+        user_email = result.get('email')
+        otp_code = result.get('otp_code')
+
+        # Trigger the professional HTML email
+        NotificationService.send_html_email(
+            user_email=user_email, 
+            subject="Welcome to Rentify - Verify Your Account", 
+            template_name="registration_otp", 
+            context={"otp": otp_code}
+        )
+        
         return Response({
-            "message": f"Pre-registration successful. OTP sent to {result['email']} for verification.",
-            "email": result['email'], # Return email for next step
-        }, status=status.HTTP_200_OK) # Changed to 200 OK since no object was created in DB
+            "message": f"Pre-registration successful. OTP sent to {user_email} for verification.",
+            "email": user_email,
+        }, status=status.HTTP_200_OK)
     
 
 # --- 2. OTP Verification (Now performs DB Save and issues tokens) ---
@@ -88,14 +99,11 @@ class OTPVerifyAPIView(views.APIView):
 
 # --- 3. Login OTP Request (NEW) ---
 class LoginOTPRequestAPIView(views.APIView):
-    """
-    POST /api/v1/auth/login/request-otp/
-    Authenticates user/password and sends a login OTP via email.
-    """
     permission_classes = []
 
     def post(self, request, *args, **kwargs):
         serializer = LoginOTPRequestSerializer(data=request.data)
+        # The notification now triggers inside .is_valid() -> .validate()
         serializer.is_valid(raise_exception=True)
         
         user = serializer.validated_data['user']
@@ -378,7 +386,11 @@ class RequestSensitiveChangeAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = SensitiveChangeRequestSerializer(data=request.data)
+        # FIX: Pass the request context here
+        serializer = SensitiveChangeRequestSerializer(
+            data=request.data, 
+            context={'request': request} 
+        )
         serializer.is_valid(raise_exception=True)
         
         otp = f"{random.randint(100000, 999999)}"
@@ -388,21 +400,22 @@ class RequestSensitiveChangeAPIView(APIView):
             defaults={
                 'new_email': serializer.validated_data.get('new_email'),
                 'new_mobile': serializer.validated_data.get('new_mobile'),
-                'otp': otp
+                'otp': otp,
+                'created_at': timezone.now()
             }
         )
         
-        # FIX: Background threading to eliminate the 25s delay
-        def send_otp():
-            send_mail(
-                subject="Security Verification: Account Update",
-                message=f"Your OTP is: {otp}. This expires in 15 minutes.",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[request.user.email],
-                fail_silently=False,
-            )
-        
-        threading.Thread(target=send_otp).start()
+        # UPDATED: Using professional HTML template for the Request phase
+        # This replaces the old threading send_mail block
+        NotificationService.send_html_email(
+            user_email=request.user.email,
+            subject="Security Verification: Account Update",
+            template_name="login_otp",  # We reuse the login_otp template as it highlights the code perfectly
+            context={
+                'otp': otp,
+                'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')
+            }
+        )
         
         return Response({"message": "OTP sent to your registered email address."}, status=status.HTTP_200_OK)
 
@@ -412,54 +425,65 @@ class VerifySensitiveChangeAPIView(APIView):
     def post(self, request):
         otp_input = request.data.get('otp')
         try:
-            # Check for a pending request for the authenticated user
             pending = PendingSensitiveChange.objects.get(user=request.user)
         except PendingSensitiveChange.DoesNotExist:
             return Response({"error": "No pending update found."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Requirement 1: Validate OTP and Expiry
         if not pending.is_valid() or pending.otp != otp_input:
             return Response({"error": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
-        device_ip = get_client_ip(request)
+        device_ip = get_client_ip(request) 
         changed_fields = []
+        summary_fields = [] 
 
-        # 1. Handle Email Update
         if pending.new_email:
-            # Requirement 5: Store historical metadata
             ProfileAuditLog.objects.create(
-                user=user, 
-                field_name="email", 
-                old_value=user.email, 
-                new_value=pending.new_email,
-                device_identifier=device_ip, 
-                action_by=user
+                user=user, field_name="email", 
+                old_value=user.email, new_value=pending.new_email,
+                device_identifier=device_ip, action_by=user
             )
             user.email = pending.new_email
             changed_fields.append('email')
+            summary_fields.append("Email Address")
         
-        # 2. Handle Phone Update (Targeting your specific 'phone' field)
         if pending.new_mobile:
-            # Requirement 5: Record old and new values
             ProfileAuditLog.objects.create(
-                user=user, 
-                field_name="phone", 
-                old_value=str(user.phone), 
-                new_value=pending.new_mobile,
-                device_identifier=device_ip, 
-                action_by=user
+                user=user, field_name="phone", 
+                old_value=str(user.phone), new_value=pending.new_mobile,
+                device_identifier=device_ip, action_by=user
             )
-            
-            # Explicitly update the field from your User model
             user.phone = pending.new_mobile
             changed_fields.append('phone')
+            summary_fields.append("Phone Number")
 
-        # Requirement 4: Atomic update
+        # 4. Atomic Save with Integrity Protection
         if changed_fields:
-            user.save(update_fields=changed_fields)
-        
-        # Requirement 3: Cleanup pending records after successful update
+            try:
+                user.save(update_fields=changed_fields)
+                
+                # Trigger the email ONLY after a successful database save
+                NotificationService.send_html_email(
+                    user_email=user.email,
+                    subject="Security Alert: Profile Updated",
+                    template_name="profile_updated",
+                    context={
+                        "name": user.first_name or "User",
+                        "updates": summary_fields,
+                        "timestamp": timezone.now().strftime('%d %b %Y, %I:%M %p')
+                    },
+                    user=user 
+                )
+                
+            except IntegrityError:
+                return Response(
+                    {"error": "The email or phone number is already registered to another account."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # 5. Cleanup
         pending.delete()
         
-        return Response({"message": "Profile contact information updated successfully."}, status=status.HTTP_200_OK)
+        return Response({
+            "message": "Profile contact information updated successfully."
+        }, status=status.HTTP_200_OK)

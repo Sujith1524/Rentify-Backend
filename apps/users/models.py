@@ -1,10 +1,11 @@
 # apps/users/models.py
 
-from django.contrib.auth.models import AbstractUser, BaseUserManager
+import datetime
 from django.db import models
-from apps.core.models import BaseModel
-from django.utils import timezone
 from django.conf import settings
+from django.utils import timezone
+from apps.core.models import BaseModel
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 
 
 # NOTE: Since we are defining the User model below, we can reference it directly.
@@ -172,9 +173,9 @@ class PendingSensitiveChange(BaseModel):
     new_email = models.EmailField(null=True, blank=True)
     new_mobile = models.CharField(max_length=15, null=True, blank=True)
     otp = models.CharField(max_length=6)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     def is_valid(self):
-        from django.utils import timezone
-        import datetime
-        return self.created_at >= timezone.now() - datetime.timedelta(minutes=15)
+        now = timezone.now()
+        # 900 seconds = 15 minutes
+        return (now - self.created_at).total_seconds() < 900
