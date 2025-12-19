@@ -121,6 +121,27 @@ class PropertyRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
         return Listing.objects.filter(owner=self.request.user)
     
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        listing_id = instance.id
+        listing_title = instance.title
+        
+        # Capture the data before deletion if you want to show full details
+        # serializer = self.get_serializer(instance)
+        # deleted_data = serializer.data 
+
+        # Perform the actual deletion
+        self.perform_destroy(instance)
+        
+        # Return a custom response instead of 204
+        return Response({
+            "message": f"Listing '{listing_title}' (ID: {listing_id}) was successfully deleted.",
+            "status": "success",
+            # "deleted_record": deleted_data  # Uncomment this to send full details
+        }, status=status.HTTP_200_OK) # Changed from 204 to 200
+
+
+
 class NearbyListingAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
