@@ -119,3 +119,31 @@ class PropertyRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
         if self.request.method in permissions.SAFE_METHODS:
             return Listing.objects.filter(is_active=True)
         return Listing.objects.filter(owner=self.request.user)
+    
+
+class NearbyListingAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # 1. Get the user's saved location
+        try:
+            user_location = request.user.location
+        except Exception:
+            return Response({"error": "Please set your location first."}, status=400)
+
+        # 2. Get radius from query params (default to 50km)
+        radius = request.query_params.get('radius', 50)
+
+        # 3. Call the Service
+        listings = ListingLocationService.get_nearby_listings(
+            user_lat=user_location.latitude,
+            user_lng=user_location.longitude,
+            radius_km=radius
+        )
+
+        serializer = ListingSerializer(listings, many=True)
+        return Response({
+            "user_location": user_location.address,
+            "search_radius": f"{radius}km",
+            "results": serializer.data
+        })

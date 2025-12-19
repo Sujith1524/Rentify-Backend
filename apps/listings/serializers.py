@@ -84,8 +84,8 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
 
 
 class ListingSerializer(serializers.ModelSerializer):
-    # This field will capture the 'distance' calculated by our ListingLocationService
-    distance = serializers.FloatField(read_only=True)
+    # Change FloatField to SerializerMethodField to allow rounding
+    distance = serializers.SerializerMethodField()
     owner_email = serializers.EmailField(source='owner.email', read_only=True)
 
     class Meta:
@@ -96,6 +96,17 @@ class ListingSerializer(serializers.ModelSerializer):
             'distance', 'is_active', 'created_at'
         ]
         read_only_fields = ['owner', 'created_at']
+
+    def get_distance(self, obj):
+        """
+        Retrieves the distance attribute added by the service 
+        and rounds it to 2 decimal places.
+        """
+        # The service adds 'distance' to the object using .annotate()
+        distance = getattr(obj, 'distance', None)
+        if distance is not None:
+            return round(float(distance), 2)
+        return None
 
     def create(self, validated_data):
         # Automatically assign the logged-in user as the owner

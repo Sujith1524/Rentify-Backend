@@ -170,7 +170,7 @@ EMAIL_PORT = 587             # Standard TLS port
 EMAIL_USE_TLS = True         # Required for secure connections
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = 'Rentify Support <support@rentify.com>'
+DEFAULT_FROM_EMAIL = 'Rentify<support@rentify.com>'
 
 
 # --- Django REST Framework Configuration ---
