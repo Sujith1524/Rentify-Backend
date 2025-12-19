@@ -502,28 +502,22 @@ class UpdateLocationAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        method = request.data.get('method')  # 'gps' or 'manual'
+        method = request.data.get('method')
         lat = request.data.get('latitude')
         lng = request.data.get('longitude')
         address = request.data.get('address')
+        
+        # Capture Device Info for Audit Trail
+        device_info = request.META.get('HTTP_USER_AGENT', 'Unknown Device')
 
-        # 1. Handle Manual Logic (Geocoding)
-        if method == 'manual':
-            if not address:
-                return Response({"error": "Address is required for manual entry."}, status=400)
-            
+        if method == 'manual' and address:
             geo_data = GeocodingService.get_coords_from_address(address)
             if not geo_data:
-                return Response({"error": "Could not find coordinates for this address. Please be more specific."}, status=400)
-            
+                return Response({"error": "Geocoding failed."}, status=400)
             lat, lng = geo_data['lat'], geo_data['lng']
             address = geo_data['display_name']
 
-        # 2. Coordinate Validation
-        if not validate_coords(lat, lng):
-            return Response({"error": "Invalid or out-of-range coordinates."}, status=400)
-
-        # 3. Save / Update with Audit Trail
+        # Update or Create with Audit metadata
         location, created = UserLocation.objects.update_or_create(
             user=request.user,
             defaults={
@@ -531,17 +525,12 @@ class UpdateLocationAPIView(APIView):
                 'longitude': lng,
                 'address': address,
                 'method': method,
-                'device_identifier': request.META.get('HTTP_USER_AGENT', 'Unknown'),
+                'device_identifier': device_info, # Log the device/browser
             }
         )
 
         return Response({
-            "message": "Location updated successfully.",
-            "data": {
-                "latitude": lat,
-                "longitude": lng,
-                "address": address,
-                "method": method,
-                "updated_at": location.updated_at
-            }
-        }, status=status.HTTP_200_OK)
+            "message": "Location updated and logged successfully.",
+            "device_logged": device_info,
+            "updated_at": location.updated_at
+        })

@@ -109,3 +109,9 @@ class Listing(models.Model):
 
     def __str__(self):
         return self.title
+    
+
+class UserLocation(models.Model):
+    # ...
+    device_identifier = models.CharField(max_length=255, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True) 
