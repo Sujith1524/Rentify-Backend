@@ -4,6 +4,8 @@ from rest_framework import serializers
 from django.core.cache import cache
 from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import timedelta # Used for checking token expiration
+from django.core.exceptions import ValidationError
+
 
 def validate_password_complexity(value):
     """
@@ -50,3 +52,12 @@ def get_tokens_for_user(user):
         'refresh': str(refresh),
         'access': str(refresh.access_token),
     }
+
+def validate_coordinates(lat, lng):
+    if lat is None or lng is None:
+        raise ValidationError("Coordinates cannot be empty.")
+    if not (-90 <= float(lat) <= 90):
+        raise ValidationError("Invalid Latitude.")
+    if not (-180 <= float(lng) <= 180):
+        raise ValidationError("Invalid Longitude.")
+    return True

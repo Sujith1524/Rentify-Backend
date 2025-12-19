@@ -179,3 +179,23 @@ class PendingSensitiveChange(BaseModel):
         now = timezone.now()
         # 900 seconds = 15 minutes
         return (now - self.created_at).total_seconds() < 900
+    
+
+class UserLocation(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='location')
+    
+    # Coordinates
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    
+    # Human readable info
+    address = models.TextField(blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Metadata for the Audit/Logging requirement
+    method = models.CharField(max_length=20, choices=[('gps', 'GPS'), ('manual', 'Manual')])
+    device_identifier = models.CharField(max_length=255, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.email} - {self.city or 'Unknown Location'}"

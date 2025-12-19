@@ -4,9 +4,15 @@ from rest_framework import generics, permissions, status
 from apps.users.permissions import IsVerifiedOrStaff
 from rest_framework.response import Response
 from .models import Property
-# Import both new serializers
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from .services import ListingLocationService
+from .serializers import ListingSerializer
 from .serializers import PropertyCreateSerializer, PropertyReadSerializer, PropertyUpdateSerializer
 from apps.listings.permissions import IsOwnerOrAdmin
+from rest_framework import generics, permissions
+from .models import Listing
+from .serializers import ListingSerializer
 
 class PropertyListCreateAPIView(generics.ListCreateAPIView):
     """
@@ -75,3 +81,41 @@ class PropertyRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
             status=status.HTTP_200_OK 
         )
         
+
+class ListingSearchView(APIView):
+    def get(self, request):
+        # Get coordinates from the user's saved location profile
+        user_location = request.user.location # From the UserLocation model we created
+        
+        if not user_location.latitude or not user_location.longitude:
+            return Response({"error": "Location not set"}, status=400)
+
+        # Use the service to get listings within 50km
+        listings = ListingLocationService.get_nearby_listings(
+            user_lat=user_location.latitude,
+            user_lng=user_location.longitude,
+            radius_km=50
+        )
+        
+        serializer = ListingSerializer(listings, many=True)
+        return Response(serializer.data)
+    
+
+class PropertyListCreateAPIView(generics.ListCreateAPIView):
+    queryset = Listing.objects.filter(is_active=True)
+    serializer_class = ListingSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+class PropertyRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Listing.objects.all()
+    serializer_class = ListingSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    
+    def get_queryset(self):
+        # Allow users to see all active listings, but only owners can edit/delete
+        if self.request.method in permissions.SAFE_METHODS:
+            return Listing.objects.filter(is_active=True)
+        return Listing.objects.filter(owner=self.request.user)

@@ -20,6 +20,9 @@ from django.utils import timezone
 from .models import UserKYC, ProfileAuditLog
 from django.db import transaction 
 from django.db import IntegrityError
+from .models import UserLocation
+from apps.core.geocoding import GeocodingService
+from apps.core.utils import validate_coordinates
 from apps.core.notifications import NotificationService
 from django.utils import timezone
 from .serializers import ( 
@@ -486,4 +489,59 @@ class VerifySensitiveChangeAPIView(APIView):
         
         return Response({
             "message": "Profile contact information updated successfully."
+        }, status=status.HTTP_200_OK)
+    
+
+
+def validate_coords(lat, lng):
+    if lat is None or lng is None:
+        return False
+    return -90 <= float(lat) <= 90 and -180 <= float(lng) <= 180
+
+class UpdateLocationAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        method = request.data.get('method')  # 'gps' or 'manual'
+        lat = request.data.get('latitude')
+        lng = request.data.get('longitude')
+        address = request.data.get('address')
+
+        # 1. Handle Manual Logic (Geocoding)
+        if method == 'manual':
+            if not address:
+                return Response({"error": "Address is required for manual entry."}, status=400)
+            
+            geo_data = GeocodingService.get_coords_from_address(address)
+            if not geo_data:
+                return Response({"error": "Could not find coordinates for this address. Please be more specific."}, status=400)
+            
+            lat, lng = geo_data['lat'], geo_data['lng']
+            address = geo_data['display_name']
+
+        # 2. Coordinate Validation
+        if not validate_coords(lat, lng):
+            return Response({"error": "Invalid or out-of-range coordinates."}, status=400)
+
+        # 3. Save / Update with Audit Trail
+        location, created = UserLocation.objects.update_or_create(
+            user=request.user,
+            defaults={
+                'latitude': lat,
+                'longitude': lng,
+                'address': address,
+                'method': method,
+                'device_identifier': request.META.get('HTTP_USER_AGENT', 'Unknown'),
+            }
+        )
+
+        return Response({
+            "message": "Location updated successfully.",
+            "data": {
+                "latitude": lat,
+                "longitude": lng,
+                "address": address,
+                "method": method,
+                "updated_at": location.updated_at
+            }
         }, status=status.HTTP_200_OK)

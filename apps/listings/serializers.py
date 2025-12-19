@@ -3,6 +3,8 @@
 from rest_framework import serializers
 from django.db import transaction # <-- CRITICAL IMPORT ADDED
 from .models import Property, PropertyImage
+from rest_framework import serializers
+from .models import Listing
 
 # --- 1. Property Image Serializer (Handles URL Strings) ---
 class PropertyImageSerializer(serializers.ModelSerializer):
@@ -78,3 +80,24 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         # instance.is_approved = False 
         
         return super().update(instance, validated_data)
+    
+
+
+class ListingSerializer(serializers.ModelSerializer):
+    # This field will capture the 'distance' calculated by our ListingLocationService
+    distance = serializers.FloatField(read_only=True)
+    owner_email = serializers.EmailField(source='owner.email', read_only=True)
+
+    class Meta:
+        model = Listing
+        fields = [
+            'id', 'owner', 'owner_email', 'title', 'description', 
+            'price', 'address', 'latitude', 'longitude', 
+            'distance', 'is_active', 'created_at'
+        ]
+        read_only_fields = ['owner', 'created_at']
+
+    def create(self, validated_data):
+        # Automatically assign the logged-in user as the owner
+        validated_data['owner'] = self.context['request'].user
+        return super().create(validated_data)
