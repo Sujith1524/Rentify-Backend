@@ -109,36 +109,46 @@ class PropertyListCreateAPIView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+
 class PropertyRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Listing.objects.all()
     serializer_class = ListingSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    
+    permission_classes = [permissions.IsAuthenticated]
+
     def get_queryset(self):
-        # Allow users to see all active listings, but only owners can edit/delete
+        # Owners can see their deleted items to restore them
+        # Others only see active items
+        user = self.request.user
         if self.request.method in permissions.SAFE_METHODS:
             return Listing.objects.filter(is_active=True)
-        return Listing.objects.filter(owner=self.request.user)
-    
+        return Listing.objects.filter(owner=user)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        listing_id = instance.id
-        listing_title = instance.title
+        instance.soft_delete() # Logic from model
         
-        # Capture the data before deletion if you want to show full details
-        # serializer = self.get_serializer(instance)
-        # deleted_data = serializer.data 
-
-        # Perform the actual deletion
-        self.perform_destroy(instance)
-        
-        # Return a custom response instead of 204
         return Response({
-            "message": f"Listing '{listing_title}' (ID: {listing_id}) was successfully deleted.",
-            "status": "success",
-            # "deleted_record": deleted_data  # Uncomment this to send full details
-        }, status=status.HTTP_200_OK) # Changed from 204 to 200
+            "message": f"Listing '{instance.title}' has been soft-deleted (deactivated).",
+            "id": instance.id,
+            "is_active": instance.is_active
+        }, status=status.HTTP_200_OK)
+
+#  Soft Deleted Property Restore
+class PropertyRestoreAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        # We look for the listing specifically among the owner's inactive ones
+        try:
+            listing = Listing.objects.get(pk=pk, owner=request.user, is_active=False)
+        except Listing.DoesNotExist:
+            return Response({"error": "Listing not found or already active."}, status=404)
+        
+        listing.restore()
+        return Response({
+            "message": f"Listing '{listing.title}' has been successfully restored.",
+            "is_active": listing.is_active
+        }, status=status.HTTP_200_OK)
 
 
 

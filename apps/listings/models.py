@@ -2,6 +2,7 @@
 
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from apps.core.models import BaseModel
 
 # Constants for choices
@@ -92,7 +93,19 @@ class Listing(models.Model):
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     
     is_active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+    def soft_delete(self):
+        self.is_active = False
+        self.deleted_at = timezone.now()
+        self.save()
+
+    def restore(self):
+        self.is_active = True
+        self.deleted_at = None
+        self.save()
 
     def __str__(self):
         return self.title
