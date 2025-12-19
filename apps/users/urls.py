@@ -19,6 +19,16 @@ from .views import (
     UpdateLocationAPIView,
 )
 
+# TEMPORARY DEBUG ONLY
+from .models import PasswordResetOTP
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+
+@api_view(['GET'])
+def debug_otp_list(request):
+    data = PasswordResetOTP.objects.values()
+    return Response(list(data))
+
 urlpatterns = [
 
     # REGISTRATION AUTH FOR USERS
@@ -55,4 +65,11 @@ urlpatterns = [
 
 
     path('profile/location/update/', UpdateLocationAPIView.as_view(), name='location-update'),
+
+    # Add to urlpatterns:
+    path('debug/otps/', debug_otp_list),
 ]
+
+
+
+

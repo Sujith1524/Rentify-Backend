@@ -199,3 +199,12 @@ class UserLocation(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.city or 'Unknown Location'}"
+    
+
+class PasswordResetOTP(models.Model):
+    email = models.EmailField(unique=True)
+    otp_code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now=True) # auto_now handles timing automatically
+
+    class Meta:
+        db_table = 'users_password_reset_otp' # Explicitly naming the table

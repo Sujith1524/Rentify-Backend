@@ -288,3 +288,10 @@ SECURITY_LOCKOUT = {
     'CACHE_KEY_PREFIX': 'login_fail:'
 }
 
+#CACHE Storage
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'otp_cache_table',
+    }
+}

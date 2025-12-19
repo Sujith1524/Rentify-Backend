@@ -1,3 +1,102 @@
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #eaeaea;
+            overflow: hidden;">
+
+    <!-- Header -->
+    <div style="background-color: #0f172a; padding: 20px 24px;">
+        <h2 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">
+            Secure Login Verification
+        </h2>
+        <p style="margin: 6px 0 0; color: #cbd5f5; font-size: 14px;">
+            {{ company_name }} Security
+        </p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding: 28px 24px; color: #111827; font-size: 15px; line-height: 1.6;">
+        <p style="margin: 0 0 16px;">
+            We detected a login attempt to your <b>{{ company_name }}</b> account.
+            Please use the verification code below to continue.
+        </p>
+
+        <!-- OTP Box -->
+        <div style="margin: 28px 0;
+                    padding: 22px;
+                    background-color: #f8fafc;
+                    border: 1px dashed #c7d2fe;
+                    border-radius: 8px;
+                    text-align: center;">
+            <div style="font-size: 13px; color: #475569; margin-bottom: 8px;">
+                One-Time Verification Code
+            </div>
+            <div style="font-size: 36px;
+                        font-weight: 700;
+                        letter-spacing: 6px;
+                        color: #1e40af;">
+                {{ otp }}
+            </div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 10px;">
+                Valid for 5 minutes
+            </div>
+        </div>
+
+        <!-- Details -->
+        <div style="font-size: 13px; color: #374151; margin-bottom: 24px;">
+            <b>Login Details</b><br>
+            Action: Secure Account Login<br>
+            Time: {{ timestamp }}
+        </div>
+
+        <!-- Warning -->
+        <div style="background-color: #fff1f2;
+                    border-left: 4px solid #dc2626;
+                    padding: 14px 16px;
+                    border-radius: 6px;
+                    font-size: 13px;
+                    color: #7f1d1d;">
+            <b>Didn’t request this?</b><br>
+            If this wasn’t you, your account may be at risk.
+            Please reset your password immediately to secure your account.
+        </div>
+
+        <p style="margin-top: 26px; font-size: 14px;">
+            If you have any questions, contact our support team.
+        </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background-color: #f8fafc;
+                padding: 16px 24px;
+                text-align: center;
+                font-size: 12px;
+                color: #6b7280;">
+        © 2025 {{ company_name }}. All rights reserved.<br>
+        This is an automated security message. Please do not reply.
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #eee; padding: 20px;">
     <h2 style="color: #2D3E50;">Secure Login Verification</h2>
     <p>A login attempt was made for your {{ company_name }} account. Please enter the code below to authorize this session:</p>
@@ -17,4 +116,4 @@
     <p style="font-size: 12px; color: #888; margin-top: 30px; text-align: center;">
         &copy; 2025 {{ company_name }} Security Operations Center
     </p>
-</div>
+</div> -->
