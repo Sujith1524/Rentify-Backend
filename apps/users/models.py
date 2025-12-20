@@ -75,6 +75,18 @@ class User(AbstractUser, BaseModel):
 
     def __str__(self):
         return self.email
+    
+
+class PasswordResetOTP(models.Model):
+    email = models.EmailField(unique=True)
+    otp_code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now=True)
+
+    def is_valid(self):
+        # OTP is valid for 10 minutes
+        from django.utils import timezone
+        import datetime
+        return self.created_at >= timezone.now() - datetime.timedelta(minutes=10)
 
 # --- Define the KYC Status Choices ---
 KYC_STATUS_CHOICES = (
@@ -199,12 +211,4 @@ class UserLocation(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.city or 'Unknown Location'}"
-    
-
-class PasswordResetOTP(models.Model):
-    email = models.EmailField(unique=True)
-    otp_code = models.CharField(max_length=6)
-    created_at = models.DateTimeField(auto_now=True) # auto_now handles timing automatically
-
-    class Meta:
-        db_table = 'users_password_reset_otp' # Explicitly naming the table
+        

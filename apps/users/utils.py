@@ -1,18 +1,19 @@
 # apps/users/utils.py
 
+from django.core.cache import cache
 import json
 import random
 import string
 import threading
 from datetime import timedelta
 from django.conf import settings
-from django.conf import settings 
-from django.conf import settings
-from django.db import transaction, connection
 from django.utils import timezone
 from django.core.cache import cache
 from .models import PasswordResetOTP
 from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 
 # --- OTP Configuration (Using settings) ---
 # Assuming you have SIMPLE_OTP settings in config/settings.py:
@@ -71,40 +72,100 @@ def generate_otp_code(length=OTP_LENGTH):
     """Generates a random numeric OTP code."""
     return ''.join(random.choices(string.digits, k=length))
 
-def generate_and_cache_otp(email, purpose='reset', duration=None):
-    clean_email = email.lower().strip()
-    otp_code = str(random.randint(100000, 999999))
+
+# 1. This class handles the "Background" sending so your API stays fast
+class EmailThread(threading.Thread):
+    def __init__(self, subject, message, recipient_list):
+        self.subject = subject
+        self.message = message
+        self.recipient_list = recipient_list
+        threading.Thread.__init__(self, daemon=True)
+
+    def run(self):
+        try:
+            send_mail(
+                self.subject,
+                self.message,
+                settings.DEFAULT_FROM_EMAIL,
+                self.recipient_list,
+                fail_silently=False,
+            )
+            print(f"📬 [EMAIL-SUCCESS] Sent to {self.recipient_list}")
+        except Exception as e:
+            print(f"📧 [EMAIL-ERROR] Failed to send: {e}")
+
+def send_password_reset_email(to_email, otp_code):
+    subject = "Reset Your Password - Rentify"
+    context = {'otp_code': otp_code}
     
-    # 1. Delete any existing OTP for this email first
-    PasswordResetOTP.objects.filter(email=clean_email).delete()
-    
-    # 2. Create new record exactly like a Listing creation
-    new_otp = PasswordResetOTP(
-        email=clean_email,
-        otp_code=otp_code
+    # Render the HTML template with the OTP code
+    html_content = render_to_string('emails/password_reset_otp.html', context)
+    # Create a plain-text version for email clients that don't support HTML
+    text_content = strip_tags(html_content)
+
+    # Create the email object
+    msg = EmailMultiAlternatives(
+        subject, 
+        text_content, 
+        settings.DEFAULT_FROM_EMAIL, 
+        [to_email]
     )
-    new_otp.save()
+    msg.attach_alternative(html_content, "text/html")
     
-    print(f"✅ [DATABASE-SAVE-SUCCESS] Saved OTP {otp_code} for {clean_email}")
+    # Use your thread to send it in the background
+    EmailThreadObj(msg).start()
+
+class EmailThreadObj(threading.Thread):
+    def __init__(self, email_message):
+        self.email_message = email_message
+        threading.Thread.__init__(self, daemon=True)
+
+    def run(self):
+        try:
+            self.email_message.send()
+            print(f"📬 [HTML-EMAIL-SUCCESS] Sent to {self.email_message.to}")
+        except Exception as e:
+            print(f"📧 [EMAIL-ERROR] {e}")
+
+
+def generate_and_cache_otp(identifier, purpose='reset'):
+    clean_email = identifier.lower().strip()
+    otp_code = generate_otp_code() # Ensure this function exists in your utils
+    
+    # Save to Database (Persistent)
+    PasswordResetOTP.objects.update_or_create(
+        email=clean_email,
+        defaults={'otp_code': otp_code, 'created_at': timezone.now()}
+    )
+    
+    # Real Email Sending (Background)
+    # This ensures the email is sent but doesn't block the API response
+    try:
+        send_password_reset_email(clean_email, otp_code)
+    except Exception as e:
+        print(f"Email Error: {e}")
+    
+    print(f"\n--- [DATABASE] OTP SAVED ---")
+    print(f"To: {clean_email} | Code: {otp_code}")
+    print(f"---------------------------\n")
+    
     return otp_code
 
-def validate_otp(email, otp_code, purpose='reset'):
-    clean_email = email.lower().strip()
-    
-    # Force Django to refresh the database cache
-    record = PasswordResetOTP.objects.filter(email=clean_email).first()
-    
-    if record:
-        print(f"🔍 [DATABASE-FOUND] Match found: {record.otp_code}")
-        if record.otp_code == str(otp_code):
+def validate_otp(identifier, otp_code, purpose='reset'):
+    clean_email = identifier.lower().strip()
+    try:
+        otp_record = PasswordResetOTP.objects.get(email=clean_email)
+        
+        # Check code match AND expiration (10 mins)
+        if otp_record.otp_code == str(otp_code) and otp_record.is_valid():
             return True
-    else:
-        print(f"❌ [DATABASE-MISSING] No record for {clean_email}")
+    except PasswordResetOTP.DoesNotExist:
+        pass
+        
     return False
-    
 
-def clear_otp_from_cache(email, purpose='reset'):
-    PasswordResetOTP.objects.filter(email=email.lower().strip()).delete()
+def clear_otp_from_cache(identifier, purpose='reset'):
+    PasswordResetOTP.objects.filter(email=identifier.lower().strip()).delete()
 
 
 def get_failed_attempts_key(identifier):
@@ -146,43 +207,3 @@ def clear_failed_attempts(identifier):
     cache.delete(key)
 
 
-# Helper to send email in a separate thread so the API doesn't freeze
-class EmailThread(threading.Thread):
-    def __init__(self, subject, message, recipient_list):
-        self.subject = subject
-        self.message = message
-        self.recipient_list = recipient_list
-        threading.Thread.__init__(self, daemon=True) # daemon=True ensures it runs in background
-
-    def run(self):
-        try:
-            send_mail(
-                self.subject,
-                self.message,
-                settings.DEFAULT_FROM_EMAIL,
-                self.recipient_list,
-                fail_silently=False,
-            )
-            print(f"📬 [EMAIL] Successfully sent to {self.recipient_list}")
-        except Exception as e:
-            print(f"📧 [EMAIL-ERROR] Failed to send: {e}")
-
-def send_password_reset_email(to_email, otp_code):
-    subject = "Reset Your Password - Rentify"
-    message = f"""
-    Hello,
-
-    You requested a password reset. Use the code below to reset your password.
-
-    Your OTP Code: {otp_code}
-
-    This code expires in 5 minutes.
-    If you did not request this, please ignore this email.
-
-    Best regards,
-    Rentify Team
-    """
-    
-    # Send using the thread so the user gets the 200 OK response instantly
-    EmailThread(subject, message, [to_email]).start()
-    print(f"[DEBUG] 📨 Email sending initiated to {to_email}")

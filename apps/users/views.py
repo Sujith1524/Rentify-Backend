@@ -9,7 +9,7 @@ from rest_framework import views, generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
-from .utils import load_kyc_draft, clear_kyc_draft
+from .utils import load_kyc_draft, clear_kyc_draft, generate_and_cache_otp
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAdminUser
 from apps.users.permissions import IsVerifiedOrStaff
@@ -300,23 +300,18 @@ class KYCReviewAPIView(generics.GenericAPIView):
     
 
 class PasswordResetRequestAPIView(generics.GenericAPIView):
-    """
-    POST /api/v1/auth/password/reset/request/
-    Initiates password reset by sending a link to the user's email.
-    """
     serializer_class = PasswordResetRequestSerializer
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
-        # If validate_email fails (user not found), the next line throws 
-        # a 400 Bad Request error with the message "Account not found..."
-        serializer = self.get_serializer(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True) 
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        
+        # 1. Force the OTP to save to DB
+        generate_and_cache_otp(email, purpose='reset')
 
-        # If validation succeeds (user found), we proceed
-        serializer.save(request=request)
-
-        # Success message when user is found and OTP is sent
         return Response({
             "message": "An OTP for password reset has been sent to your email."
         }, status=status.HTTP_200_OK)

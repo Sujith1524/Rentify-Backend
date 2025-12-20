@@ -1,4 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <style>
+        :root { color-scheme: light dark; supported-color-schemes: light dark; }
+        .email-body { background-color: #f3f4f6; padding: 20px; }
+        .container { background-color: #ffffff; color: #1f2937; border: 1px solid #e5e7eb; }
+        .header { background-color: #4f46e5 !important; color: #ffffff !important; }
+        .otp-box { background-color: #f8fafc; border: 1px dashed #4f46e5; }
+        .otp-code { color: #4f46e5; }
+        .footer-text { color: #94a3b8; }
+        @media (prefers-color-scheme: dark) {
+            .email-body { background-color: #000000 !important; }
+            .container { background-color: #111827 !important; color: #f9fafb !important; border-color: #374151 !important; }
+            .header { background-color: #4f46e5 !important; color: #ffffff !important; }
+            .otp-box { background-color: #1f2937 !important; border-color: #818cf8 !important; }
+            .otp-code { color: #818cf8 !important; }
+            .footer-text { color: #64748b !important; }
+            .sub-text { color: #9ca3af !important; }
+        }
+    </style>
+</head>
+<body class="email-body" style="margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <div class="container" style="max-width: 600px; margin: 0 auto; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div class="header" style="padding: 30px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 2px;">RENTIFY</h1>
+            <p style="margin: 5px 0 0; font-size: 14px; opacity: 0.9;">Account Security</p>
+        </div>
+        <div style="padding: 35px 25px;">
+            <h2 style="margin-top: 0; font-size: 20px;">Confirm Profile Changes</h2>
+            <p class="sub-text" style="font-size: 15px; line-height: 1.6;">We received a request to update sensitive information on your Rentify profile. Please use the code below to authorize these changes.</p>
+            <div class="otp-box" style="margin: 30px 0; padding: 25px; border-radius: 10px; text-align: center;">
+                <div class="sub-text" style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Verification Code</div>
+                <div class="otp-code" style="font-size: 42px; font-weight: 800; letter-spacing: 10px;">{{ otp }}</div>
+                <div class="sub-text" style="font-size: 11px; margin-top: 12px; opacity: 0.7;">Request time: {{ timestamp }}</div>
+            </div>
+            <div style="background-color: #fff1f2; border-left: 4px solid #e11d48; padding: 14px 16px; border-radius: 6px; font-size: 13px; color: #9f1239;">
+                <strong>Wasn't you?</strong> If you did not initiate a profile update, your account security might be compromised. Please contact support immediately.
+            </div>
+        </div>
+        <div style="padding: 20px; text-align: center; border-top: 1px solid rgba(120, 120, 120, 0.1);">
+            <p class="footer-text" style="font-size: 11px; margin: 0;">&copy; 2025 Rentify Security | Do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 
 <div style="
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
     max-width: 620px;
@@ -10,7 +74,7 @@
 ">
 
     <!-- Header -->
-    <div style="
+    <!-- <div style="
         background-color: #111827;
         padding: 22px 28px;
     ">
@@ -29,10 +93,10 @@
         ">
             {{ company_name }} Security Team
         </p>
-    </div>
+    </div> -->
 
     <!-- Body -->
-    <div style="
+    <!-- <div style="
         padding: 28px;
         color: #111827;
         font-size: 15px;
@@ -45,10 +109,10 @@
         <p>
             We’re writing to inform you that your account information was
             <strong>successfully updated</strong>.
-        </p>
+        </p> -->
 
         <!-- Summary Card -->
-        <div style="
+        <!-- <div style="
             margin: 22px 0;
             padding: 18px;
             background-color: #f9fafb;
@@ -90,16 +154,16 @@
             ">
                 Time of change: {{ timestamp }}
             </p>
-        </div>
+        </div> -->
 
         <!-- Confirmation -->
-        <p style="font-size: 14px;">
+        <!-- <p style="font-size: 14px;">
             <strong>If this was you:</strong><br>
             No further action is required. Your account remains secure.
         </p>
 
         <!-- Security Warning -->
-        <div style="
+        <!-- <div style="
             margin-top: 22px;
             padding: 16px 18px;
             background-color: #fef2f2;
@@ -117,10 +181,10 @@
                 {{ support_email }}
             </a>
         </p>
-    </div>
+    </div> --> -->
 
     <!-- Footer -->
-    <div style="
+    <!-- <div style="
         background-color: #f9fafb;
         padding: 16px 28px;
         text-align: center;
@@ -129,9 +193,9 @@
     ">
         © 2025 {{ company_name }}. All rights reserved.<br>
         This is an automated security message. Please do not reply.
-    </div>
+    </div> -->
 
-</div>
+<!-- </div> --> -->
 
 
 

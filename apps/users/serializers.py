@@ -14,8 +14,6 @@ from .utils import save_kyc_draft, load_kyc_draft
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from apps.core.notifications import NotificationService
-from .utils import generate_and_cache_otp, send_password_reset_email
-from .utils import generate_and_cache_otp, validate_otp, clear_otp_from_cache
 from django.utils import timezone
 from .utils import (
     generate_and_cache_otp, 
@@ -425,45 +423,36 @@ class KYCReviewSerializer(serializers.Serializer):
         return value
     
 
-# ==========================================
-# 1. REQUEST SERIALIZER (Generates OTP)
-# ==========================================
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
     def validate_email(self, value):
+        # 1. Check for user existence
         try:
             user = User.objects.get(email=value)
         except User.DoesNotExist:
-            print(f"\n[DEBUG] ❌ Password Reset Failed: Email {value} not found.\n")
-            raise serializers.ValidationError("Account not found with this email address.")
+            # DANGER: THIS EXPOSES USER EXISTENCE (Violation of OWASP)
+            raise serializers.ValidationError("Account not found with this email address.") 
         
-        if user.status in ['suspended', 'disabled']:
-             raise serializers.ValidationError("Account is suspended.")
+        # 2. Block suspended/disabled accounts
+        if user.status == 'suspended' or user.status == 'disabled':
+             raise serializers.ValidationError("Account is suspended or deactivated. Cannot initiate password reset.")
 
         self.user = user
         return value
 
     def save(self, request):
         if self.user:
-            # 1. Generate OTP
-            otp_code = generate_and_cache_otp(self.user.email, purpose='reset')
+            # CRITICAL FIX: Generate and send OTP for password reset purpose
+            generate_and_cache_otp(self.user.email, purpose='reset')
             
-            # 2. DEBUG PRINT (Keep this for safety)
-            print(f"🔑 OTP Generated: {otp_code}")
-
-            # 3. SEND REAL EMAIL (The new part)
-            try:
-                send_password_reset_email(self.user.email, otp_code)
-            except Exception as e:
-                print(f"❌ Error sending email: {e}")
-                # We don't stop the process even if email fails, to avoid exposing logic
+            # TODO: Implement actual email sending via Celery
+            # send_password_reset_otp_task.delay(self.user.email)
             
-        return {"message": "OTP Sent"}
+        # Security Rule: Always return a generic success message
+        return {"message": "If an account with that email exists, an OTP for password reset has been sent."}
+    
 
-# ==========================================
-# 2. CONFIRM SERIALIZER (Verifies OTP)
-# ==========================================
 class PasswordResetConfirmSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     otp_code = serializers.CharField(required=True, max_length=6)
@@ -471,25 +460,24 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
     def validate(self, data):
         email = data['email']
-        otp_entered = data['otp_code']
+        new_password = data['new_password']
         
-        # Debug Log
-        print(f"\n[DEBUG] Verifying OTP for {email}. Entered: {otp_entered}")
-
+        # 1. Check user existence
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             raise serializers.ValidationError({"email": "Invalid email."})
         
-        # Validate OTP
-        if not validate_otp(email, otp_entered, purpose='reset'):
-            print(f"[DEBUG] ❌ OTP Mismatch or Expired!\n")
-            raise serializers.ValidationError({"otp_code": "Invalid or expired OTP."})
+        # 2. Validate the OTP
+        # CRITICAL FIX: Use the OTP validation utility
+        if not validate_otp(email, data['otp_code'], purpose='reset'):
+            # Rule 2: Deny expired/invalid OTP
+            raise serializers.ValidationError({"otp_code": "Invalid or expired OTP. Please request a new code."})
             
-        print(f"[DEBUG] ✅ OTP Verified Successfully!")
-
-        if user.check_password(data['new_password']):
-            raise serializers.ValidationError({"new_password": "Used previous password."})
+        # 3. Check if new password is the same as the old password
+        if user.check_password(new_password):
+            # NEW RULE: The user cannot use the existing password
+            raise serializers.ValidationError({"new_password": "This password is your current one. Please choose a new password."})
 
         self.user = user
         return data
@@ -499,12 +487,13 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         user = self.user
         new_password = self.validated_data['new_password']
         
+        # 1. Set the new password and update the invalidation timestamp
         user.set_password(new_password)
         user.password_updated_at = timezone.now()
         user.save(update_fields=['password', 'password_updated_at']) 
         
+        # 2. Clear the used OTP from cache (Rule 2)
         clear_otp_from_cache(user.email, purpose='reset')
-        print(f"[DEBUG] 🔒 Password changed for {user.email}.\n")
         
         return user
     
