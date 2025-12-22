@@ -408,7 +408,7 @@ class RequestSensitiveChangeAPIView(APIView):
         NotificationService.send_html_email(
             user_email=request.user.email,
             subject="Security Verification: Account Update",
-            template_name="login_otp",  # We reuse the login_otp template as it highlights the code perfectly
+            template_name="profile_verify_otp",  
             context={
                 'otp': otp,
                 'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')
