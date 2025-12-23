@@ -183,7 +183,10 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny', # Default is AllowAny for flexibility
-    )
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'resend_otp': '1/minute', # This is now part of the main config
+    }
 }
 
 # --- Simple JWT Configuration (Matching your current token lifespan) ---
@@ -287,4 +290,5 @@ SECURITY_LOCKOUT = {
     'ATTEMPT_WINDOW': 600,      # Time window to count attempts in seconds (10 minutes)
     'CACHE_KEY_PREFIX': 'login_fail:'
 }
+
 

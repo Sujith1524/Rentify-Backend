@@ -14,6 +14,7 @@ from .utils import save_kyc_draft, load_kyc_draft
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from apps.core.notifications import NotificationService
+from apps.users.models import User, PendingSensitiveChange
 from django.utils import timezone
 from .utils import (
     generate_and_cache_otp, 
@@ -647,5 +648,45 @@ class SensitiveChangeRequestSerializer(serializers.Serializer):
                 query = query.exclude(id=user_id)
             if query.exists():
                 raise serializers.ValidationError({"new_mobile": "This phone number is already in use."})
+
+        return data
+    
+
+
+class ResendOTPSerializer(serializers.Serializer):
+    PURPOSE_CHOICES = (
+        ('registration', 'Registration'),
+        ('login', 'Login'),
+        ('reset', 'Password Reset'),
+        ('change', 'Sensitive Change'),
+    )
+    email = serializers.EmailField(required=False)
+    purpose = serializers.ChoiceField(choices=PURPOSE_CHOICES)
+
+    def validate(self, data):
+        purpose = data.get('purpose')
+        email = data.get('email')
+        
+        # 1. Logic for Registration (Checks Cache)
+        if purpose == 'registration':
+            if not email:
+                raise serializers.ValidationError({"email": "Email is required for registration resend."})
+            if not cache.get(f'pre_register:{email}'):
+                raise serializers.ValidationError({"detail": "Registration session expired. Please register again."})
+
+        # 2. Logic for Login/Reset (Checks User Table)
+        elif purpose in ['login', 'reset']:
+            if not email:
+                raise serializers.ValidationError({"email": "Email is required."})
+            if not User.objects.filter(email=email).exists():
+                raise serializers.ValidationError({"detail": "User not found."})
+
+        # 3. Logic for Sensitive Change (Checks Auth and Pending Record)
+        elif purpose == 'change':
+            request = self.context.get('request')
+            if not request.user.is_authenticated:
+                raise serializers.ValidationError({"detail": "Authentication required."})
+            if not PendingSensitiveChange.objects.filter(user=request.user).exists():
+                raise serializers.ValidationError({"detail": "No pending change request found."})
 
         return data

@@ -140,10 +140,10 @@ def generate_and_cache_otp(identifier, purpose='reset'):
     
     # Real Email Sending (Background)
     # This ensures the email is sent but doesn't block the API response
-    try:
-        send_password_reset_email(clean_email, otp_code)
-    except Exception as e:
-        print(f"Email Error: {e}")
+    # try:
+    #     send_password_reset_email(clean_email, otp_code)
+    # except Exception as e:
+    #     print(f"Email Error: {e}")
     
     print(f"\n--- [DATABASE] OTP SAVED ---")
     print(f"To: {clean_email} | Code: {otp_code}")

@@ -24,6 +24,9 @@ from .models import UserLocation
 from apps.core.geocoding import GeocodingService
 from apps.core.utils import validate_coordinates
 from apps.core.notifications import NotificationService
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import AllowAny
+from rest_framework.throttling import SimpleRateThrottle
 from django.utils import timezone
 from .serializers import ( 
     UserRegistrationSerializer, 
@@ -38,6 +41,7 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     LogoutSerializer,
     SensitiveChangeRequestSerializer,
+    ResendOTPSerializer,
 )
 
 User = get_user_model()
@@ -529,3 +533,78 @@ class UpdateLocationAPIView(APIView):
             "device_logged": device_info,
             "updated_at": location.updated_at
         })
+    
+
+
+class ResendOTPThrottle(SimpleRateThrottle):
+    scope = 'resend_otp'
+    def get_cache_key(self, request, view):
+        return self.get_ident(request)
+
+
+class ResendOTPAPIView(APIView):
+    # CRITICAL FIX: Tell this view to look for your Bearer Token
+    authentication_classes = [JWTAuthentication]
+    # AllowAny is used because 'reset' and 'registration' don't have tokens yet,
+    # but 'change' does. The logic inside the serializer handles the check.
+    permission_classes = [AllowAny]
+    throttle_classes = [ResendOTPThrottle]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ResendOTPSerializer(
+            data=request.data, 
+            context={'request': request} # This passes the token-user to the serializer
+        )
+        serializer.is_valid(raise_exception=True)
+        
+        purpose = serializer.validated_data['purpose']
+        email = serializer.validated_data.get('email')
+        
+        # --- Logic for Sending ---
+        if purpose == 'registration':
+            otp_code = generate_and_cache_otp(email, purpose='registration')
+            NotificationService.send_html_email(
+                user_email=email, 
+                subject="Verify Your Account", 
+                template_name="registration_otp", 
+                context={"otp": otp_code}
+            )
+
+        elif purpose == 'login':
+            otp_code = generate_and_cache_otp(email, purpose='login')
+            NotificationService.send_html_email(
+                user_email=email,
+                subject="Your Secure Login Code",
+                template_name="login_otp",
+                context={'otp': otp_code, 'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')}
+            )
+
+        elif purpose == 'reset':
+            otp_code = generate_and_cache_otp(email, purpose='reset')
+            NotificationService.send_html_email(
+                user_email=email,
+                subject="Password Reset OTP",
+                template_name="password_reset_otp",
+                context={'otp': otp_code}
+            )
+
+        elif purpose == 'change':
+            # This request.user will now be valid because of JWTAuthentication above
+            user = request.user 
+            otp = f"{random.randint(100000, 999999)}"
+            
+            from apps.users.models import PendingSensitiveChange
+            PendingSensitiveChange.objects.filter(user=user).update(
+                otp=otp, 
+                created_at=timezone.now()
+            )
+            
+            NotificationService.send_html_email(
+                user_email=user.email,
+                subject="Security Verification",
+                template_name="profile_verify_otp",
+                context={'otp': otp, 'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')}
+            )
+            email = user.email
+
+        return Response({"message": f"OTP resent to {email}"}, status=status.HTTP_200_OK)

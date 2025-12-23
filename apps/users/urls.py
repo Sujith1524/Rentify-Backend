@@ -17,6 +17,7 @@ from .views import (
     RequestSensitiveChangeAPIView,
     VerifySensitiveChangeAPIView,
     UpdateLocationAPIView,
+    ResendOTPAPIView,
 )
 
 urlpatterns = [
@@ -55,4 +56,7 @@ urlpatterns = [
 
 
     path('profile/location/update/', UpdateLocationAPIView.as_view(), name='location-update'),
+
+    # RESEND OTP
+    path('resend-otp/', ResendOTPAPIView.as_view(), name='resend-otp'),
 ]
