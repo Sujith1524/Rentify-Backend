@@ -626,75 +626,26 @@ class SensitiveChangeRequestSerializer(serializers.Serializer):
         new_email = data.get('new_email')
         new_mobile = data.get('new_mobile')
         
+        # Get the user safely from context
         request = self.context.get('request')
-        user = request.user if request else None
-        user_id = user.id if user else None
+        user_id = request.user.id if request and request.user else None
 
         from apps.users.models import User
 
         if new_email:
-            # 1. Check if it is the user's CURRENT email
-            if user and user.email == new_email:
-                raise serializers.ValidationError({"new_email": "This is already your current email address."})
-
-            # 2. Check if it belongs to someone else
+            # Check if email exists and belongs to SOMEONE ELSE
             query = User.objects.filter(email=new_email)
             if user_id:
                 query = query.exclude(id=user_id)
             if query.exists():
-                raise serializers.ValidationError({"new_email": "This email is already in use by another account."})
+                raise serializers.ValidationError({"new_email": "This email is already in use."})
 
         if new_mobile:
-            # 1. Check if it is the user's CURRENT mobile number
-            if user and user.phone == new_mobile:
-                raise serializers.ValidationError({"new_mobile": "This is already your current mobile number."})
-
-            # 2. Check if it belongs to someone else
+            # Check if phone exists and belongs to SOMEONE ELSE
             query = User.objects.filter(phone=new_mobile)
             if user_id:
                 query = query.exclude(id=user_id)
             if query.exists():
-                raise serializers.ValidationError({"new_mobile": "This phone number is already in use by another account."})
-
-        return data
-    
-
-
-class ResendOTPSerializer(serializers.Serializer):
-    PURPOSE_CHOICES = (
-        ('registration', 'Registration'),
-        ('login', 'Login'),
-        ('reset', 'Password Reset'),
-        ('change', 'Sensitive Change'),
-    )
-    email = serializers.EmailField(required=False)
-    purpose = serializers.ChoiceField(choices=PURPOSE_CHOICES)
-
-    def validate(self, data):
-        purpose = data.get('purpose')
-        email = data.get('email')
-        
-        # 1. Logic for Registration (Checks Cache)
-        if purpose == 'registration':
-            if not email:
-                raise serializers.ValidationError({"email": "Email is required for registration resend."})
-            if not cache.get(f'pre_register:{email}'):
-                raise serializers.ValidationError({"detail": "Registration session expired. Please register again."})
-
-        # 2. Logic for Login/Reset (Checks User Table)
-        elif purpose in ['login', 'reset']:
-            if not email:
-                raise serializers.ValidationError({"email": "Email is required."})
-            if not User.objects.filter(email=email).exists():
-                raise serializers.ValidationError({"detail": "User not found."})
-
-        # 3. Logic for Sensitive Change (Checks Auth and Pending Record)
-        elif purpose == 'change':
-            request = self.context.get('request')
-            if not request.user.is_authenticated:
-                raise serializers.ValidationError({"detail": "Authentication required."})
-            from apps.users.models import PendingSensitiveChange # Adjust path
-            if not PendingSensitiveChange.objects.filter(user=request.user).exists():
-                raise serializers.ValidationError({"detail": "No pending change request found."})
+                raise serializers.ValidationError({"new_mobile": "This phone number is already in use."})
 
         return data

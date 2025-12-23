@@ -288,9 +288,3 @@ SECURITY_LOCKOUT = {
     'CACHE_KEY_PREFIX': 'login_fail:'
 }
 
-
-REST_FRAMEWORK = {
-    'DEFAULT_THROTTLE_RATES': {
-        'resend_otp': '1/min',  # Users can only resend once per minute
-    }
-}
