@@ -58,5 +58,5 @@ urlpatterns = [
     path('profile/location/update/', UpdateLocationAPIView.as_view(), name='location-update'),
 
     # RESEND OTP REQUESTING ENDPOINT
-    path('auth/resend-otp/', ResendOTPAPIView.as_view(), name='resend-otp'),
+    path('resend-otp/', ResendOTPAPIView.as_view(), name='resend-otp'),
 ]

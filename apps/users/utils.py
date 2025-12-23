@@ -130,22 +130,17 @@ class EmailThreadObj(threading.Thread):
 
 def generate_and_cache_otp(identifier, purpose='reset'):
     clean_email = identifier.lower().strip()
-    otp_code = generate_otp_code() # Ensure this function exists in your utils
+    otp_code = generate_otp_code() 
     
     # Save to Database (Persistent)
+    # We only save here. We don't send emails here anymore to avoid duplicates.
     PasswordResetOTP.objects.update_or_create(
         email=clean_email,
         defaults={'otp_code': otp_code, 'created_at': timezone.now()}
     )
     
-    # Real Email Sending (Background)
-    # This ensures the email is sent but doesn't block the API response
-    try:
-        send_password_reset_email(clean_email, otp_code)
-    except Exception as e:
-        print(f"Email Error: {e}")
-    
-    print(f"\n--- [DATABASE] OTP SAVED ---")
+    # Debugging logs
+    print(f"\n--- [DATABASE] OTP SAVED for {purpose.upper()} ---")
     print(f"To: {clean_email} | Code: {otp_code}")
     print(f"---------------------------\n")
     

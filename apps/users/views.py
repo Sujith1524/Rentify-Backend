@@ -24,6 +24,7 @@ from .models import UserLocation
 from apps.core.geocoding import GeocodingService
 from apps.core.utils import validate_coordinates
 from apps.core.notifications import NotificationService
+from rest_framework.permissions import AllowAny
 from django.utils import timezone
 from .throttles import ResendOTPThrottle
 from .serializers import ( 
@@ -310,9 +311,15 @@ class PasswordResetRequestAPIView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         
         email = serializer.validated_data['email']
-        
-        # 1. Force the OTP to save to DB
-        generate_and_cache_otp(email, purpose='reset')
+        otp_code = generate_and_cache_otp(email, purpose='reset')
+
+        # ADDED: Professional HTML email trigger for the initial request
+        NotificationService.send_html_email(
+            user_email=email,
+            subject="Reset Your Password - Rentify",
+            template_name="password_reset_otp",
+            context={'otp': otp_code}
+        )
 
         return Response({
             "message": "An OTP for password reset has been sent to your email."
@@ -534,7 +541,8 @@ class UpdateLocationAPIView(APIView):
     
 
 class ResendOTPAPIView(views.APIView):
-    permission_classes = [] # Handled dynamically in serializer
+    # CHANGED: AllowAny ensures the Token is processed, identifying request.user
+    permission_classes = [AllowAny] 
     throttle_classes = [ResendOTPThrottle]
 
     def post(self, request, *args, **kwargs):
@@ -567,20 +575,20 @@ class ResendOTPAPIView(views.APIView):
         # --- CASE 3: PASSWORD RESET ---
         elif purpose == 'reset':
             otp_code = generate_and_cache_otp(email, purpose='reset')
-            # Triggering the email (Adding this since your original logic had a TODO)
+            # FIXED: Only one email sent here now.
             NotificationService.send_html_email(
                 user_email=email,
                 subject="Password Reset OTP",
-                template_name="registration_otp", # Or your specific reset template
+                template_name="password_reset_otp", # Use the specific reset template
                 context={'otp': otp_code}
             )
 
         # --- CASE 4: SENSITIVE CHANGE ---
         elif purpose == 'change':
+            # This will now work because permission_classes=[AllowAny] correctly populates request.user
             user = request.user
             otp = f"{random.randint(100000, 999999)}"
             
-            # Update the existing record with a new OTP
             from apps.users.models import PendingSensitiveChange
             PendingSensitiveChange.objects.filter(user=user).update(
                 otp=otp, 
@@ -593,7 +601,7 @@ class ResendOTPAPIView(views.APIView):
                 template_name="profile_verify_otp",
                 context={'otp': otp, 'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')}
             )
-            email = user.email # for the response message
+            email = user.email
 
         return Response({
             "message": f"A new OTP has been sent to {email}.",
