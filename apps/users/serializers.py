@@ -626,27 +626,35 @@ class SensitiveChangeRequestSerializer(serializers.Serializer):
         new_email = data.get('new_email')
         new_mobile = data.get('new_mobile')
         
-        # Get the user safely from context
         request = self.context.get('request')
-        user_id = request.user.id if request and request.user else None
+        user = request.user if request else None
+        user_id = user.id if user else None
 
         from apps.users.models import User
 
         if new_email:
-            # Check if email exists and belongs to SOMEONE ELSE
+            # 1. Check if it is the user's CURRENT email
+            if user and user.email == new_email:
+                raise serializers.ValidationError({"new_email": "This is already your current email address."})
+
+            # 2. Check if it belongs to someone else
             query = User.objects.filter(email=new_email)
             if user_id:
                 query = query.exclude(id=user_id)
             if query.exists():
-                raise serializers.ValidationError({"new_email": "This email is already in use."})
+                raise serializers.ValidationError({"new_email": "This email is already in use by another account."})
 
         if new_mobile:
-            # Check if phone exists and belongs to SOMEONE ELSE
+            # 1. Check if it is the user's CURRENT mobile number
+            if user and user.phone == new_mobile:
+                raise serializers.ValidationError({"new_mobile": "This is already your current mobile number."})
+
+            # 2. Check if it belongs to someone else
             query = User.objects.filter(phone=new_mobile)
             if user_id:
                 query = query.exclude(id=user_id)
             if query.exists():
-                raise serializers.ValidationError({"new_mobile": "This phone number is already in use."})
+                raise serializers.ValidationError({"new_mobile": "This phone number is already in use by another account."})
 
         return data
     

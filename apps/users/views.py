@@ -18,6 +18,7 @@ from .models import Profile, PendingSensitiveChange
 from .serializers import ProfileSerializer
 from django.utils import timezone
 from .models import UserKYC, ProfileAuditLog
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db import transaction 
 from django.db import IntegrityError
 from .models import UserLocation
@@ -390,7 +391,8 @@ def get_client_ip(request):
     return x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
 
 class RequestSensitiveChangeAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         # FIX: Pass the request context here
@@ -427,7 +429,8 @@ class RequestSensitiveChangeAPIView(APIView):
         return Response({"message": "OTP sent to your registered email address."}, status=status.HTTP_200_OK)
 
 class VerifySensitiveChangeAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         otp_input = request.data.get('otp')
@@ -542,6 +545,7 @@ class UpdateLocationAPIView(APIView):
 
 class ResendOTPAPIView(views.APIView):
     # CHANGED: AllowAny ensures the Token is processed, identifying request.user
+    authentication_classes = [JWTAuthentication] 
     permission_classes = [AllowAny] 
     throttle_classes = [ResendOTPThrottle]
 
