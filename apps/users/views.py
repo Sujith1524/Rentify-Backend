@@ -25,6 +25,7 @@ from apps.core.geocoding import GeocodingService
 from apps.core.utils import validate_coordinates
 from apps.core.notifications import NotificationService
 from django.utils import timezone
+from .throttles import ResendOTPThrottle
 from .serializers import ( 
     UserRegistrationSerializer, 
     OTPVerificationSerializer, 
@@ -38,6 +39,7 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     LogoutSerializer,
     SensitiveChangeRequestSerializer,
+    ResendOTPSerializer,
 )
 
 User = get_user_model()
@@ -529,3 +531,71 @@ class UpdateLocationAPIView(APIView):
             "device_logged": device_info,
             "updated_at": location.updated_at
         })
+    
+
+class ResendOTPAPIView(views.APIView):
+    permission_classes = [] # Handled dynamically in serializer
+    throttle_classes = [ResendOTPThrottle]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ResendOTPSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        
+        purpose = serializer.validated_data['purpose']
+        email = serializer.validated_data.get('email')
+        
+        # --- CASE 1: REGISTRATION ---
+        if purpose == 'registration':
+            otp_code = generate_and_cache_otp(email, purpose='registration')
+            NotificationService.send_html_email(
+                user_email=email, 
+                subject="Verify Your Account - Rentify", 
+                template_name="registration_otp", 
+                context={"otp": otp_code}
+            )
+
+        # --- CASE 2: LOGIN ---
+        elif purpose == 'login':
+            otp_code = generate_and_cache_otp(email, purpose='login')
+            NotificationService.send_html_email(
+                user_email=email,
+                subject="Your Rentify Secure Login Code",
+                template_name="login_otp",
+                context={'otp': otp_code, 'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')}
+            )
+
+        # --- CASE 3: PASSWORD RESET ---
+        elif purpose == 'reset':
+            otp_code = generate_and_cache_otp(email, purpose='reset')
+            # Triggering the email (Adding this since your original logic had a TODO)
+            NotificationService.send_html_email(
+                user_email=email,
+                subject="Password Reset OTP",
+                template_name="registration_otp", # Or your specific reset template
+                context={'otp': otp_code}
+            )
+
+        # --- CASE 4: SENSITIVE CHANGE ---
+        elif purpose == 'change':
+            user = request.user
+            otp = f"{random.randint(100000, 999999)}"
+            
+            # Update the existing record with a new OTP
+            from apps.users.models import PendingSensitiveChange
+            PendingSensitiveChange.objects.filter(user=user).update(
+                otp=otp, 
+                created_at=timezone.now()
+            )
+            
+            NotificationService.send_html_email(
+                user_email=user.email,
+                subject="Security Verification: Account Update",
+                template_name="profile_verify_otp",
+                context={'otp': otp, 'timestamp': timezone.now().strftime('%d %b %Y, %I:%M %p')}
+            )
+            email = user.email # for the response message
+
+        return Response({
+            "message": f"A new OTP has been sent to {email}.",
+            "purpose": purpose
+        }, status=status.HTTP_200_OK)
