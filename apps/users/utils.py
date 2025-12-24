@@ -130,24 +130,31 @@ class EmailThreadObj(threading.Thread):
 
 def generate_and_cache_otp(identifier, purpose='reset'):
     clean_email = identifier.lower().strip()
-    otp_code = generate_otp_code() # Ensure this function exists in your utils
+    otp_code = generate_otp_code() 
     
-    # Save to Database (Persistent)
-    PasswordResetOTP.objects.update_or_create(
-        email=clean_email,
-        defaults={'otp_code': otp_code, 'created_at': timezone.now()}
-    )
+    # --- LOGIC 1: Registration and Login (Saves to CACHE) ---
+    if purpose == 'registration':
+        cache_key = f'otp:registration:{clean_email}'
+        cache.set(cache_key, otp_code, timeout=900) # 15 minutes
+        print(f"--- [CACHE] Registration OTP saved for {clean_email} ---")
+
+    elif purpose == 'login':
+        cache_key = f'otp:login:{clean_email}'
+        cache.set(cache_key, otp_code, timeout=600) # 10 minutes
+        print(f"--- [CACHE] Login OTP saved for {clean_email} ---")
+
+    # --- LOGIC 2: Password Reset (Saves to DATABASE) ---
+    elif purpose == 'reset':
+        PasswordResetOTP.objects.update_or_create(
+            email=clean_email,
+            defaults={'otp_code': otp_code, 'created_at': timezone.now()}
+        )
+        print(f"--- [DATABASE] Reset OTP saved for {clean_email} ---")
     
-    # Real Email Sending (Background)
-    # This ensures the email is sent but doesn't block the API response
-    # try:
-    #     send_password_reset_email(clean_email, otp_code)
-    # except Exception as e:
-    #     print(f"Email Error: {e}")
+    # (Background email sending remains commented as per your previous fix)
     
-    print(f"\n--- [DATABASE] OTP SAVED ---")
-    print(f"To: {clean_email} | Code: {otp_code}")
-    print(f"\n")
+    print(f"To: {clean_email} | Purpose: {purpose} | Code: {otp_code}")
+    print(f"---------------------------\n")
     
     return otp_code
 
