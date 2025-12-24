@@ -147,7 +147,7 @@ def generate_and_cache_otp(identifier, purpose='reset'):
     
     print(f"\n--- [DATABASE] OTP SAVED ---")
     print(f"To: {clean_email} | Code: {otp_code}")
-    print(f"---------------------------\n")
+    print(f"\n")
     
     return otp_code
 

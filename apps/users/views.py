@@ -313,8 +313,17 @@ class PasswordResetRequestAPIView(generics.GenericAPIView):
         
         email = serializer.validated_data['email']
         
-        # 1. Force the OTP to save to DB
-        generate_and_cache_otp(email, purpose='reset')
+        # 1. Capture the code returned by the function
+        otp_code = generate_and_cache_otp(email, purpose='reset')
+
+        # 2. TRIGGER THE EMAIL MANUALLY (Since it is commented out in utils.py)
+        # This ensures you only get ONE email for this request.
+        NotificationService.send_html_email(
+            user_email=email,
+            subject="Password Reset Request - Rentify",
+            template_name="password_reset_otp", 
+            context={'otp': otp_code}
+        )
 
         return Response({
             "message": "An OTP for password reset has been sent to your email."

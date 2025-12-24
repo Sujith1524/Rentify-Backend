@@ -441,17 +441,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
         self.user = user
         return value
-
-    def save(self, request):
-        if self.user:
-            # CRITICAL FIX: Generate and send OTP for password reset purpose
-            generate_and_cache_otp(self.user.email, purpose='reset')
-            
-            # TODO: Implement actual email sending via Celery
-            # send_password_reset_otp_task.delay(self.user.email)
-            
-        # Security Rule: Always return a generic success message
-        return {"message": "If an account with that email exists, an OTP for password reset has been sent."}
     
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
