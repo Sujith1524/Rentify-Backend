@@ -47,7 +47,7 @@ urlpatterns = [
     # Explicit Logout (Means the user try to logout the refresh token also get blacklist)
     path('logout/', LogoutAPIView.as_view(), name='logout'), 
 
-    # PROFILE MANAGEMENT [ GET & POST]
+    # PROFILE MANAGEMENT [ GET & UPDATE]
     path('profile/', UserProfileAPIView.as_view(), name='user-profile'),
 
     # PROFILE UPDATION REQUEST OTP SENDING AND VERIFY
