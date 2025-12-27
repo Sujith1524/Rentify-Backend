@@ -50,11 +50,11 @@ urlpatterns = [
     # PROFILE MANAGEMENT [ GET & POST]
     path('profile/', UserProfileAPIView.as_view(), name='user-profile'),
 
-    # # PROFILE UPDATION REQUEST OTP SENDING AND VERIFY
+    # PROFILE UPDATION REQUEST OTP SENDING AND VERIFY
     path('profile/sensitive-update-request/', RequestSensitiveChangeAPIView.as_view(), name='sensitive-update-request'),
     path('profile/sensitive-update-verify/', VerifySensitiveChangeAPIView.as_view(), name='sensitive-update-verify'),
 
-
+    # LOCATION SETUP & DETECTION
     path('profile/location/update/', UpdateLocationAPIView.as_view(), name='location-update'),
 
     # RESEND OTP

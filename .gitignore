@@ -22,3 +22,5 @@ Thumbs.db
 
 # Text / Local status files
 CompletedUserStoryDetails.txt
+apps/users/__pycache__/urls.cpython-312.pyc
+apps/users/__pycache__/urls.cpython-312.pyc
